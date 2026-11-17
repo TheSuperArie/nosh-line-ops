@@ -19,7 +19,7 @@ jobs:
           def up(what, text):
               r = urllib.request.urlopen(urllib.request.Request("https://www.call2all.co.il/ym/api/UploadTextFile",
                   data=urllib.parse.urlencode({"token": K, "what": what, "contents": text}).encode()), timeout=60).read().decode()
-              print(what, r[:80])
+              print(what, r[:300])
           names = [l.strip() for l in open("server/manifest.txt", encoding="utf-8") if l.strip() and not l.startswith("#")]
           for n in names:
               up(f"ivr2:/AgentCode/{n}.txt", b64(f"server/{n}.py"))
