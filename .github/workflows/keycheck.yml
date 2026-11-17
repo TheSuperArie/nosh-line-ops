@@ -1,0 +1,23 @@
+name: keycheck
+on:
+  repository_dispatch:
+    types: [keycheck]
+jobs:
+  k:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          python3 - <<'PY'
+          import os, re, json, urllib.request, urllib.parse
+          k = os.environ["YM_TOKEN"]
+          s = k.strip()
+          print("LEN", len(k), "STRIPPED", len(s), "DOTS", s.count("."), "HAS_APIK", "apik__" in s, "SPACES", " " in s, "QUOTES", s[:1] in "\"'", "PREFIX_CHARS", len(s.split(".")[0]) if "." in s else 0)
+          for name, req in [("param", urllib.request.Request("https://www.call2all.co.il/ym/api/GetSession", data=urllib.parse.urlencode({"token": s}).encode())),
+                            ("header", urllib.request.Request("https://www.call2all.co.il/ym/api/GetSession", headers={"authorization": s}))]:
+              try:
+                  print("TRY", name, urllib.request.urlopen(req, timeout=30).read().decode()[:200])
+              except Exception as e:
+                  print("TRY", name, "ERR", e)
+          PY
+        env:
+          YM_TOKEN: ${{ secrets.YM_TOKEN }}
