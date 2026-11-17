@@ -1,0 +1,9 @@
+# סוכנים שרצים בשרת (שם הקובץ בלי .py)
+news_agent
+shows_agent
+news_pargod_agent
+news_sport_agent
+news_gizra_agent
+news_haredi_agent
+radio_agent
+cleanup_agent

@@ -1,0 +1,35 @@
+name: deploy-agents
+on:
+  push:
+    branches: [main]
+    paths: ["server/*_agent.py", "server/manifest.txt", "server/install_nosh_line.sh", "server/bootstrap.py"]
+  repository_dispatch:
+    types: [deploy]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 - <<'PY'
+          import base64, os, json, urllib.parse, urllib.request
+          K = os.environ["YM_TOKEN"].strip()
+          def b64(path):  # ימות מוחק לוכסנים הפוכים מקבצי טקסט - שומרים בבסיס 64
+              return "B64:" + base64.b64encode(open(path, "rb").read()).decode()
+          def up(what, text):
+              r = urllib.request.urlopen(urllib.request.Request("https://www.call2all.co.il/ym/api/UploadTextFile",
+                  data=urllib.parse.urlencode({"token": K, "what": what, "contents": text}).encode()), timeout=60).read().decode()
+              print(what, r[:80])
+          names = [l.strip() for l in open("server/manifest.txt", encoding="utf-8") if l.strip() and not l.startswith("#")]
+          for n in names:
+              up(f"ivr2:/AgentCode/{n}.txt", b64(f"server/{n}.py"))
+          up("ivr2:/AgentCode/manifest.txt", open("server/manifest.txt", encoding="utf-8").read())
+          up("ivr2:/AgentCode/bootstrap.txt", b64("server/bootstrap.py"))
+          up("ivr2:/AgentCode/install.txt", b64("server/install_nosh_line.sh"))
+          gh = os.environ.get("GH_DISPATCH", "").strip()
+          if gh:  # המפתח של GitHub לסוכן התוכניות (לא מודפס)
+              up("ivr2:/AgentCode/gh.txt", "B64:" + base64.b64encode(gh.encode()).decode())
+          PY
+        env:
+          YM_TOKEN: ${{ secrets.YM_TOKEN }}
+          GH_DISPATCH: ${{ secrets.GH_DISPATCH }}
