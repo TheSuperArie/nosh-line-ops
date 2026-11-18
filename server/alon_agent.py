@@ -96,20 +96,20 @@ def ffmpeg():
 
 
 # ---------- איסוף העלונים שהסקריפט של גוגל העלה ----------
-def pending():
-    """{מזהה: {"parts": {i: שם}, "n": n, "body": שם}} מתוך AgentCode."""
+def pending(st):
+    """הסקריפט של גוגל רושם כל עלון בשורה ב-AgentCode/alon_index.txt: "<מזהה> <מספר חלקים>" (0 = טקסט מהמייל).
+    (GetIVR2Dir לא מציג קבצי txt, לכן צריך אינדקס.)"""
     out = {}
-    d = ym("GetIVR2Dir", path="ivr2:/AgentCode")
-    for f in (d.get("files") or []) + (d.get("ini") or []) + (d.get("html") or []):  # קבצי txt מופיעים ב-ini
-        name = f.get("name") or ""
-        m = re.match(r"^alon_(\d{4}-\d\d-\d\d_\d{4})_(\d+)of(\d+)\.txt$", name)
-        if m:
-            e = out.setdefault(m.group(1), {"parts": {}, "n": int(m.group(3))})
-            e["parts"][int(m.group(2))] = name
+    idx = ym("GetTextFile", what="ivr2:/AgentCode/alon_index.txt").get("contents") or ""
+    for line in idx.splitlines():
+        m = re.match(r"^\s*(\d{4}-\d\d-\d\d_\d{4})\s+(\d+)\s*$", line)
+        if not m or m.group(1) in st.get("finished", []):
             continue
-        m = re.match(r"^alon_(\d{4}-\d\d-\d\d_\d{4})_body\.txt$", name)
-        if m:
-            out.setdefault(m.group(1), {"parts": {}, "n": 0})["body"] = name
+        iid, n = m.group(1), int(m.group(2))
+        if n:
+            out[iid] = {"parts": {i: f"alon_{iid}_{i}of{n}.txt" for i in range(1, n + 1)}, "n": n}
+        else:
+            out[iid] = {"parts": {}, "n": 0, "body": f"alon_{iid}_body.txt"}
     return out
 
 
@@ -242,9 +242,6 @@ def upload(path, folder):
 
 def process(iid, e, st):
     if e["n"]:
-        if len(e["parts"]) < e["n"]:
-            log(iid, f"waiting for parts {len(e['parts'])}/{e['n']}")
-            return False
         b64 = "".join(get_text(e["parts"][i]) for i in range(1, e["n"] + 1))
         text = pdf_text(base64.b64decode(re.sub(r"\s", "", b64)))
     else:
@@ -268,6 +265,9 @@ def process(iid, e, st):
             return False
     for f in list(e["parts"].values()) + ([e["body"]] if e.get("body") else []):
         ym("FileAction", action="delete", what="ivr2:/AgentCode/" + f)
+    st.setdefault("finished", []).append(iid)
+    st["finished"] = st["finished"][-30:]
+    save(st)
     log(iid, "done")
     return True
 
@@ -278,7 +278,7 @@ def in_window(now):
 
 
 def cycle(st):
-    for iid, e in sorted(pending().items()):
+    for iid, e in sorted(pending(st).items()):
         try:
             process(iid, e, st)
         except Exception as ex:  # noqa: BLE001
