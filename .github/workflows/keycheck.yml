@@ -11,7 +11,7 @@ jobs:
           import os, re, json, urllib.request, urllib.parse
           k = os.environ["YM_TOKEN"]
           s = k.strip()
-          print("LEN", len(k), "STRIPPED", len(s), "DOTS", s.count("."), "HAS_APIK", "apik__" in s, "SPACES", " " in s, "QUOTES", s[:1] in "\"'", "PREFIX_CHARS", len(s.split(".")[0]) if "." in s else 0)
+          print("LEN", len(k), "STRIPPED", len(s), "DOTS", s.count("."), "HAS_APIK", "apik__" in s, "COLON", ":" in s, "STARTS_SYS", s.startswith("0772253471:"), "SPACES", " " in s)
           U = "https://www.call2all.co.il/ym/api/GetSession"
           tries = [("bearer", urllib.request.Request(U, headers={"Authorization": "Bearer " + s})),
                    ("x-api-key", urllib.request.Request(U, headers={"x-api-key": s})),
