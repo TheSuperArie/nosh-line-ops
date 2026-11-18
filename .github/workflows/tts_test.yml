@@ -1,0 +1,11 @@
+name: tts_test
+on:
+  repository_dispatch:
+    types: [tts_test]
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -q edge-tts && python3 tools/tts_test.py
