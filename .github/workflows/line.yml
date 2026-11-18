@@ -11,6 +11,7 @@ env:
   YM_TOKEN: ${{ secrets.YM_TOKEN }}
   LINK_SECRET: line-local
   ACTION: line
+  TS_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
 jobs:
   line:
     runs-on: ubuntu-latest
@@ -42,6 +43,22 @@ jobs:
             which google-chrome >/dev/null || python -m patchright install chrome >/dev/null || true ;;
           esac
           echo "::notice title=LINE jobs::$JOBS"
+      - name: Tailscale (השרת בישראל כ-Exit Node, לאתרים החסומים מחוץ לישראל)
+        if: steps.shabbat.outputs.ok == 'true' && env.NEEDS_BROWSER != '' && env.TS_ID != ''
+        continue-on-error: true
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:github
+          version: latest
+          tailscaled-args: --tun=userspace-networking --socks5-server=localhost:1055
+          args: --exit-node=${{ secrets.TS_EXIT_NODE }}
+      - name: מנהרה
+        if: steps.shabbat.outputs.ok == 'true' && env.NEEDS_BROWSER != ''
+        env:
+          TS_EXIT: ${{ secrets.TS_EXIT_NODE }}
+        run: bash tools/tunnel.sh || echo "::warning title=TUNNEL::failed"
       - name: העלאה לקו
         if: steps.shabbat.outputs.ok == 'true'
         env:
