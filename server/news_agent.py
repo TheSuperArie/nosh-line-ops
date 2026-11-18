@@ -73,7 +73,7 @@ def clean(text):
     return t[:700]
 
 def to_item(m):
-    if not isinstance(m, dict) or m.get("deleted") or m.get("is_ads"):
+    if not isinstance(m, dict) or m.get("deleted") or m.get("is_ads") or m.get("is_advertisement"):
         return None
     txt = clean(m.get("text"))
     if len(txt) < 15:

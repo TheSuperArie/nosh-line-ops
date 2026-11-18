@@ -16,7 +16,7 @@ DIR = os.path.dirname(os.path.abspath(__file__))
 STATE = os.path.join(DIR, "alon_state.json")
 IL = ZoneInfo("Asia/Jerusalem")
 VOICE = os.environ.get("NEWS_VOICE", "fr-FR-RemyMultilingualNeural")
-RATE = os.environ.get("NEWS_RATE", "+12%")
+RATE = os.environ.get("ALON_RATE", "+0%")  # מהירות רגילה (לא כמו המבזקים) - ביקש 19/11
 KEEP = 2  # כמה עלונים נשמרים בכל שלוחה
 
 # (שלוחה, שם להקראה, ביטוי שמזהה את תחילת המדור בטקסט) - הסדר נקבע ע"י אריה 18/11
@@ -32,6 +32,8 @@ SECTIONS = [
     ("9", "הלכות", r"(?m)^[ \t]*הלכות[ \t]*$"),
     ("0", "שאלות גמרא פירוש רש\"י ותוספות", r"שאלות גפ[\"״'׳]{1,2}ת"),
 ]
+SKIP = {"0"}  # שאלות גפ"ת - לא עולה (ביקש 19/11); נשאר ברשימה רק כדי לסמן איפה נגמרות החידות
+JOKES = "1"   # הגיגים - כל הגיג בהודעה נפרדת
 
 STATUS = []
 
@@ -121,6 +123,37 @@ def pdf_text(data):
     pypdf = need("pypdf", "pypdf")
     r = pypdf.PdfReader(io.BytesIO(data))
     return "\n".join((p.extract_text() or "") for p in r.pages)
+
+
+def pdf_jokes(data):
+    """ההגיגים: כל הגיג מתחיל בשורה שהמילים הראשונות שלה מודגשות. מחזיר רשימת הגיגים (או [] אם לא נמצאו)."""
+    pypdf = need("pypdf", "pypdf")
+    jokes, inside = [], False
+    for page in pypdf.PdfReader(io.BytesIO(data)).pages:
+        rows = {}
+
+        def v(text, cm, tm, fd, fs):
+            if text.strip():
+                y = round(tm[5] * cm[3] + cm[5], 1)
+                rows.setdefault(y, []).append(("Bold" in str((fd or {}).get("/BaseFont", "")), text))
+        page.extract_text(visitor_text=v)
+        for y in sorted(rows, reverse=True):
+            parts = rows[y]
+            line = " ".join(t.strip() for _, t in parts).strip()
+            if "הגיגים המיועדים" in line:
+                inside = True
+                continue
+            if not inside:
+                continue
+            if "היכן ניתן להשיג" in line:
+                return [j for j in jokes if len(j) > 5]
+            if re.fullmatch(r"\d{0,2}\s*עלון .{1,30}תש\S{1,4}", line) or re.fullmatch(r"\d{1,2}", line):
+                continue  # כותרת/מספר עמוד
+            if parts[0][0] or not jokes:
+                jokes.append(line)
+            else:
+                jokes[-1] += " " + line
+    return [j for j in jokes if len(j) > 5] if inside else []
 
 
 # ---------- חלוקה למדורים והכנה להקראה ----------
@@ -224,9 +257,20 @@ def render(text):
 def next_slot(folder):
     d = ym("GetIVR2Dir", path="ivr2:" + folder)
     nums = sorted(int(m.group(1)) for f in d.get("files") or [] if (m := re.match(r"^(\d{3})\.wav$", f.get("name", ""))))
-    for n in nums[:max(0, len(nums) - (KEEP - 1))]:  # נשארים KEEP כולל החדש
-        ym("FileAction", action="delete", what=f"ivr2:{folder}/{n:03d}.wav")
     return f"{(nums[-1] + 1) if nums else 100:03d}"
+
+
+def prune(st, ext):
+    """בכל שלוחה נשארים רק הקבצים של KEEP העלונים האחרונים (הגיגים = כמה קבצים לעלון)."""
+    issues = st.setdefault("slots", {}).setdefault(ext, [])
+    while len(issues) > KEEP:
+        old_iid, slots = issues.pop(0)
+        for sl in slots:
+            try:
+                ym("FileAction", action="delete", what=f"ivr2:/8/3/{ext}/{sl}.wav")
+            except Exception:  # noqa: BLE001
+                pass
+        log(old_iid, f"deleted old issue from /8/3/{ext}: {slots}")
 
 
 def upload(path, folder):
@@ -243,23 +287,33 @@ def upload(path, folder):
 def process(iid, e, st):
     if e["n"]:
         b64 = "".join(get_text(e["parts"][i]) for i in range(1, e["n"] + 1))
-        text = pdf_text(base64.b64decode(re.sub(r"\s", "", b64)))
+        pdf = base64.b64decode(re.sub(r"\s", "", b64))
+        text = pdf_text(pdf)
     else:
+        pdf = None
         text = get_text(e["body"])
     name = parasha(text)
     secs = split_sections(text)
     log(iid, "parasha", name or "?", "sections", "".join(sorted(secs)))
     done = st["done"].setdefault(iid, [])
     for ext, (title, body) in sorted(secs.items(), key=lambda x: int(x[0]) or 10):
-        if ext in done:
+        if ext in done or ext in SKIP:
             continue
         intro = f"עלון לשבת{', פרשת ' + name if name else ''}. {title}. "
         try:
-            mp3 = render(speakable(intro + body))
-            slot = upload(mp3, f"/8/3/{ext}")
+            items = [intro + body]
+            if ext == JOKES and pdf:
+                jokes = pdf_jokes(pdf)
+                if len(jokes) > 1:
+                    items = list(reversed(jokes))  # הראשון בעלון מקבל את המספר הגבוה = נשמע ראשון
+            slots = []
+            for it in items:
+                slots.append(upload(render(speakable(it)), f"/8/3/{ext}"))
+            st.setdefault("slots", {}).setdefault(ext, []).append([iid, slots])
+            prune(st, ext)
             done.append(ext)
             save(st)
-            log(iid, f"uploaded {title} -> /8/3/{ext}/{slot}")
+            log(iid, f"uploaded {title} -> /8/3/{ext} {slots[0]}..{slots[-1]} ({len(slots)})")
         except Exception as ex:  # noqa: BLE001
             log(iid, "FAILED", title, str(ex)[:200])
             return False

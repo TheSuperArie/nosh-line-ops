@@ -10,3 +10,4 @@ cleanup_agent
 timing_agent
 stats_agent
 alon_agent
+news_blackcat_agent
