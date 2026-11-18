@@ -25,8 +25,18 @@ SHOWS = [  # (שם, ימים, שעות, תיקייה, כמה לשמור)
 ]
 
 
+STATUS = []
+
+
 def log(*a):
-    print(datetime.now(IL).strftime("%d/%m %H:%M:%S"), "[radio]", *a, flush=True)
+    line = datetime.now(IL).strftime("%d/%m %H:%M") + " " + " ".join(str(x) for x in a)
+    print("[radio]", line, flush=True)
+    STATUS.append(line)
+    del STATUS[:-60]
+    try:
+        ym("UploadTextFile", what="ivr2:/AgentCode/radio_status.txt", contents="\n".join(STATUS))
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def get(url):
@@ -129,6 +139,7 @@ def cycle(st):
             save(st)
             continue
         for iid, title, url in [i for i in items if i[0] not in seen][:1]:  # רק החדש ביותר
+            log("new", name, title[:50], "- downloading")
             try:
                 upload(url, folder, keep, title)
             except Exception as e:  # noqa: BLE001
