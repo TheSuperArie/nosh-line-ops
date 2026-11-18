@@ -1,0 +1,74 @@
+name: columns
+run-name: columns ${{ github.event.client_payload.step || inputs.step }}
+# טורי סוף השבוע (הועבר מ-yt-agent 18/11 - מאגר ציבורי = בלי עלות דקות).
+# מופעל מהשרת של קציר (shows_agent: שישי 7/9/10), מ-Make (לחיצה על "שלח" בדף הבחירה), או ידנית. לא רץ בשבת.
+# מאגר ציבורי: אין העלאת PDF כ-artifact ואין תצוגה מקדימה בענף - הקובץ יוצא רק במייל.
+on:
+  repository_dispatch:
+    types: [columns]
+  workflow_dispatch:
+    inputs:
+      step:
+        description: "scan / retry / build / probe"
+        required: true
+        default: scan
+      arg:
+        description: "פרמטר (scan: 7/9/10/test/dry, build: week|ids|A5)"
+        required: false
+concurrency: columns
+permissions:
+  contents: write
+env:
+  STEP: ${{ github.event.client_payload.step || inputs.step }}
+  ARG: ${{ github.event.client_payload.arg || inputs.arg }}
+  V_B64: ${{ github.event.client_payload.v }}
+  S_B64: ${{ github.event.client_payload.s }}
+  TESTV: ${{ github.event.client_payload.testv }}
+  COLUMNS_CFG: ${{ secrets.COLUMNS_CFG }}
+  GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+  TS_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q zmanim
+      - id: shabbat
+        run: python3 tools/shabbat_guard.py
+      - name: התקנות
+        if: steps.shabbat.outputs.ok == 'true'
+        run: |
+          pip install -q "requests[socks]" trafilatura lxml weasyprint pypdf pyluach
+          sudo apt-get install -y -qq fonts-culmus >/dev/null 2>&1 || echo "::warning::no culmus"
+          fc-list | grep -ci culmus || true
+      # השרת של קציר בישראל (ישראל היום / מקור ראשון חוסמים חו"ל) - רק פרוקסי מקומי 1055 יוצא דרכו
+      - name: Tailscale
+        if: steps.shabbat.outputs.ok == 'true' && env.TS_ID != ''
+        continue-on-error: true
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:github
+          version: latest
+          tailscaled-args: --tun=userspace-networking --socks5-server=localhost:1055
+          args: --exit-node=${{ secrets.TS_EXIT_NODE }}
+      - name: מצב קודם
+        if: steps.shabbat.outputs.ok == 'true'
+        run: |
+          git fetch -q --depth 1 origin columns-state && git show origin/columns-state:state.json > /tmp/state.json || echo '{}' > /tmp/state.json
+      - name: טורים
+        if: steps.shabbat.outputs.ok == 'true'
+        run: python columns.py
+      - name: שמירת מצב
+        if: always() && steps.shabbat.outputs.ok == 'true'
+        run: |
+          [ -f /tmp/state.json ] || exit 0
+          cd /tmp && rm -rf st && mkdir st && cd st && git init -q && cp /tmp/state.json .
+          git -c user.name=columns -c user.email=columns@local add -A
+          git -c user.name=columns -c user.email=columns@local commit -qm "state $(date -u +%FT%TZ)"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" HEAD:columns-state
