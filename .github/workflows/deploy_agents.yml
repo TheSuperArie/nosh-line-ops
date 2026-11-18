@@ -26,6 +26,9 @@ jobs:
           up("ivr2:/AgentCode/manifest.txt", open("server/manifest.txt", encoding="utf-8").read())
           up("ivr2:/AgentCode/bootstrap.txt", b64("server/bootstrap.py"))
           up("ivr2:/AgentCode/install.txt", b64("server/install_nosh_line.sh"))
+          yc = os.environ.get("YT_COOKIES", "").strip()
+          if yc:  # עוגיות יוטיוב לסוכן הפטריוטים (לא מודפס)
+              up("ivr2:/AgentCode/yt_cookies.txt", "B64:" + base64.b64encode(yc.encode()).decode())
           gh = os.environ.get("GH_DISPATCH", "").strip()
           if gh:  # המפתח של GitHub לסוכן התוכניות (לא מודפס)
               up("ivr2:/AgentCode/gh.txt", "B64:" + base64.b64encode(gh.encode()).decode())
@@ -33,3 +36,4 @@ jobs:
         env:
           YM_TOKEN: ${{ secrets.YM_TOKEN }}
           GH_DISPATCH: ${{ secrets.GH_DISPATCH }}
+          YT_COOKIES: ${{ secrets.YT_COOKIES }}
