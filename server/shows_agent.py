@@ -88,9 +88,9 @@ def dispatch_event(event, payload):
         return r.status
 
 
-def dispatch(jobs):
-    body = json.dumps({"event_type": "line", "client_payload": {"jobs": ";".join(jobs)}}).encode()
-    req = urllib.request.Request(f"https://api.github.com/repos/{REPO}/dispatches", data=body, method="POST", headers={
+def dispatch(jobs, repo=None, event="line", payload=None):
+    body = json.dumps({"event_type": event, "client_payload": payload or {"jobs": ";".join(jobs)}}).encode()
+    req = urllib.request.Request(f"https://api.github.com/repos/{repo or REPO}/dispatches", data=body, method="POST", headers={
         "Authorization": "Bearer " + gh_token(), "Accept": "application/vnd.github+json", "Content-Type": "application/json",
         "User-Agent": "nosh-line"})
     with urllib.request.urlopen(req, timeout=40) as r:
@@ -139,7 +139,7 @@ def gly():
 
 
 WATCH = [  # (שם, פונקציה, משימה, שעות פעילות בשעון ישראל) - הרדיו עבר ל-radio_agent
-    # הפטריוטים עברו ל-patriots_agent (יוטיוב ישירות מהשרת עם עוגיות)
+    ("c14", c14, "PAT_OPS", (19, 9)),   # הפטריוטים: מופעל במאגר הציבורי nosh-line-ops (בלי עלות דקות)
 ]
 
 
@@ -186,6 +186,14 @@ def cycle(st):
         st["seen"][name] = list(dict.fromkeys((old or []) + ids))[-60:]
         if old is None:
             log("first look", name, len(ids), "items (not firing)")
+        elif new and job == "PAT_OPS":
+            for vid in new[:2]:
+                try:
+                    code = dispatch([], repo="TheSuperArie/nosh-line-ops", event="patriots", payload={"vid": vid})
+                    status(st, f"הפטריוטים חדש {vid} - הופעל ב-nosh-line-ops ({code})")
+                except Exception as e:  # noqa: BLE001
+                    status(st, f"הפטריוטים {vid} - שגיאה בהפעלה: {str(e)[:100]}")
+                    st["seen"][name] = [i for i in st["seen"][name] if i != vid]  # ננסה שוב בסבב הבא
         elif new:
             log("NEW", name, new[:3])
             if job not in st["pending"]:

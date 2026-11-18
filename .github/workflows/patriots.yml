@@ -1,0 +1,28 @@
+name: patriots
+# הפטריוטים -> שלוחה 2/1/3. מופעל מהשרת (shows_agent) כשעולה פרק מלא חדש. מאגר ציבורי = בלי עלות דקות.
+on:
+  repository_dispatch:
+    types: [patriots]
+  workflow_dispatch:
+concurrency: patriots
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - uses: denoland/setup-deno@v2
+        with: {deno-version: v2.x}
+      - run: |
+          sudo apt-get -qq install -y ffmpeg > /dev/null
+          pip install -q -U "yt-dlp[default]" bgutil-ytdlp-pot-provider
+          docker run -d --name bgutil -p 4416:4416 --init brainicism/bgutil-ytdlp-pot-provider > /dev/null
+          for i in $(seq 1 30); do curl -s localhost:4416/ping > /dev/null && break; sleep 1; done
+          printf '%s\n' "$YT_COOKIES" > /tmp/cookies.txt
+          python3 tools/patriots.py
+        env:
+          YM_TOKEN: ${{ secrets.YM_TOKEN }}
+          YT_COOKIES: ${{ secrets.YT_COOKIES }}
+          VID: ${{ github.event.client_payload.vid }}
