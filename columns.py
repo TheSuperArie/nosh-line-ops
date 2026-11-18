@@ -790,7 +790,7 @@ def main() -> None:
     step = os.environ.get("STEP", "scan")
     arg = os.environ.get("ARG", "")
     os.makedirs("out", exist_ok=True)
-    if step != "probe":
+    if step != "probe" and not arg.startswith("dry"):
         miss = [n for n, v in (("user", GMAIL_USER), ("GMAIL_APP_PASSWORD", GMAIL_PASS), ("link", SECRET), ("click", CLICK_URL)) if not v]
         if miss:
             sys.exit("::error title=COLUMNS secrets::חסר ב-secrets של nosh-line-ops: " + ", ".join(miss))
