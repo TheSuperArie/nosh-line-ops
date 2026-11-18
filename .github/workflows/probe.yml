@@ -9,6 +9,9 @@ jobs:
       - run: |
           UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36"
           for u in https://www.kolhalashon.com/ https://www2.kolhalashon.com/ ; do curl -sL -A "$UA" -D h.txt "$u" -o p.html; echo "HOME $u $(head -1 h.txt|tr -d '\r') $(wc -c < p.html)"; grep -oE '(src|href)="[^"]*\.js[^"]*"' p.html | head -8 | sed 's/^/JS /'; grep -oE 'https?://[^"'"'"' ]*api[^"'"'"' ]*' p.html | sort -u | head -10 | sed 's/^/API /'; done
-          curl -sL -A "$UA" https://www.kolhalashon.com/main-EZZPDDUJ.js -o m.js; echo "MAIN $(wc -c < m.js)"
-          grep -oE 'https?://[a-zA-Z0-9.-]*kolhalashon[a-zA-Z0-9./_-]*' m.js | sort -u | head -20 | sed 's/^/HOST /'
-          grep -oE '"/?api/[^"]{0,80}"|`/?api/[^`]{0,80}`|"[A-Za-z]+/(Get|Search)[A-Za-z]*[^"]{0,40}"' m.js | sort -u | head -60 | sed 's/^/EP /'
+          curl -sL -A "$UA" https://www.kolhalashon.com/ -o p.html
+          for f in main-EZZPDDUJ.js $(grep -oE 'chunk-[A-Z0-9]+\.js' p.html | sort -u); do curl -sL -A "$UA" "https://www.kolhalashon.com/$f" >> all.js; done
+          echo "ALL $(wc -c < all.js)"
+          grep -oE 'https?://[a-zA-Z0-9.-]+(/[a-zA-Z0-9._/-]*)?' all.js | grep -v -E 'w3.org|google|angular|github|mozilla|chatrace|schema' | sort -u | head -30 | sed 's/^/HOST /'
+          grep -oE '(apiUrl|baseUrl|apiBase|API_URL|serverUrl)[^,;]{0,100}' all.js | sort -u | head -10 | sed 's/^/CFG /'
+          grep -oE '"[A-Za-z/]*(Shiur|shiur|Search|search|Rav|rav|Lecture)[A-Za-z/]*"' all.js | sort -u | head -40 | sed 's/^/EP /'
