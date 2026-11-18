@@ -1,7 +1,7 @@
 """סוכן "עלון לשבת" (קולדצקי) לקו נווה שלום - רץ בשרת.
 סקריפט של גוגל בחשבון של אריה מעלה את ה-PDF של העלון לתיקייה AgentCode בימות (בחלקים base64:
 alon_<תאריך>_<i>of<n>.txt). הסוכן מחבר, מוציא טקסט (pypdf), מחלק למדורים לפי הכותרות הקבועות,
-מקריא כל מדור (edge-tts, אותו קול כמו בקו) ומעלה לשלוחה 8/4/<מספר>. בכל שלוחה נשמרים 2 עלונים אחרונים.
+מקריא כל מדור (edge-tts, אותו קול כמו בקו) ומעלה לשלוחה 8/3/<מספר>. בכל שלוחה נשמרים 2 עלונים אחרונים.
 בודק רק משני 17:00 עד רביעי 14:00 (העלון יוצא בשני-שלישי) + פעם אחת בהפעלה. בשבת הכל עוצר (bootstrap)."""
 import asyncio, base64, io, json, os, platform, re, stat, subprocess, sys, tarfile, tempfile, time, urllib.parse, urllib.request, uuid
 from datetime import datetime
@@ -259,10 +259,10 @@ def process(iid, e, st):
         intro = f"עלון לשבת{', פרשת ' + name if name else ''}. {title}. "
         try:
             mp3 = render(speakable(intro + body))
-            slot = upload(mp3, f"/8/4/{ext}")
+            slot = upload(mp3, f"/8/3/{ext}")
             done.append(ext)
             save(st)
-            log(iid, f"uploaded {title} -> /8/4/{ext}/{slot}")
+            log(iid, f"uploaded {title} -> /8/3/{ext}/{slot}")
         except Exception as ex:  # noqa: BLE001
             log(iid, "FAILED", title, str(ex)[:200])
             return False
