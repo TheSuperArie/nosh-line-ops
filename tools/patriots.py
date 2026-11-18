@@ -28,7 +28,8 @@ if not vid:  # בלי מזהה - הפרק המלא האחרון מהערוץ
             vid = re.search(r"<yt:videoId>([^<]+)", e).group(1)
             break
 done = done_list()
-if not vid or vid in done:
+TEST = os.environ.get("TEST") == "1"  # בדיקה: מעלה לתיקיית AgentCode ולא מסמן כבוצע
+if not vid or (vid in done and not TEST):
     print(f"::notice title=PATRIOTS::nothing to do ({vid or 'no episode'})")
     sys.exit(0)
 ok = False
@@ -44,9 +45,11 @@ for client in (None, "web_safari", "mweb", "tv"):
 if not ok:
     sys.exit(1)
 subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", "/tmp/raw", "-vn", "-ac", "1", "-ar", "16000", "-b:a", "24k", "/tmp/p.mp3"], check=True)
+if TEST:
+    FOLDER = "/AgentCode"
 d = ym("GetIVR2Dir", path="ivr2:" + FOLDER)
 nums = sorted(int(m.group(1)) for f in d.get("files") or [] if (m := re.match(r"^(\d{3})\.wav$", f.get("name", ""))))
-for n in nums[:max(0, len(nums) - (KEEP - 1))]:
+for n in ([] if TEST else nums[:max(0, len(nums) - (KEEP - 1))]):
     ym("FileAction", action="delete", what=f"ivr2:{FOLDER}/{n:03d}.wav")
 slot = f"{(nums[-1] + 1) if nums else 100:03d}"
 out = subprocess.run(["curl", "-sS", "-m", "1800", "-F", f"token={KEY}", "-F", f"path=ivr2:{FOLDER}/{slot}.wav", "-F", "convertAudio=1",
@@ -54,4 +57,5 @@ out = subprocess.run(["curl", "-sS", "-m", "1800", "-F", f"token={KEY}", "-F", f
 print(f"::notice title=PATRIOTS upload::{vid} -> {FOLDER}/{slot} {os.path.getsize('/tmp/p.mp3') / 1048576:.1f}MB {out[:150]}")
 if '"OK"' not in out:
     sys.exit(1)
-ym("UploadTextFile", what=DONE, contents=json.dumps((done + [vid])[-60:]))
+if not TEST:
+    ym("UploadTextFile", what=DONE, contents=json.dumps((done + [vid])[-60:]))

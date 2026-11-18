@@ -1,0 +1,24 @@
+name: pattest
+# בודק שהמפתח של השרת (AgentCode/gh.txt) יכול להפעיל את המאגר הזה. מדפיס רק קוד תשובה.
+on:
+  repository_dispatch:
+    types: [pattest]
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          python3 - <<'PY'
+          import base64, json, os, urllib.parse, urllib.request
+          K = os.environ["YM_TOKEN"].strip()
+          d = urllib.request.urlopen("https://www.call2all.co.il/ym/api/DownloadFile?" + urllib.parse.urlencode({"token": K, "path": "ivr2:/AgentCode/gh.txt"}), timeout=60).read()
+          t = base64.b64decode(d[4:]).decode().strip() if d.startswith(b"B64:") else d.decode().strip()
+          req = urllib.request.Request("https://api.github.com/repos/TheSuperArie/nosh-line-ops/dispatches", method="POST",
+              data=json.dumps({"event_type": "noop"}).encode(), headers={"Authorization": "Bearer " + t, "Accept": "application/vnd.github+json"})
+          try:
+              print("PAT_STATUS", urllib.request.urlopen(req, timeout=30).status)
+          except Exception as e:
+              print("PAT_STATUS", getattr(e, "code", e))
+          PY
+        env:
+          YM_TOKEN: ${{ secrets.YM_TOKEN }}

@@ -26,3 +26,4 @@ jobs:
           YM_TOKEN: ${{ secrets.YM_TOKEN }}
           YT_COOKIES: ${{ secrets.YT_COOKIES }}
           VID: ${{ github.event.client_payload.vid }}
+          TEST: ${{ github.event.client_payload.test }}
