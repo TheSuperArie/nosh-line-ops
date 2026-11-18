@@ -23,6 +23,9 @@ for c in os.environ.get("INSPECT", "").split(";"):
                 r = call("FileAction", action="move", what=f"ivr2:{a}/{nm}", target=f"ivr2:{b}/{nm}")
                 n += r.get("responseStatus") == "OK"
         print("CAT mvall", a, b, "moved", n)
+    elif c.startswith("keys "):  # keys path - שמות בכל רשימה בתשובת GetIVR2Dir
+        d = call("GetIVR2Dir", path="ivr2:" + c[5:])
+        print("CAT keys", c[5:], {k: [x.get("name") for x in v][:15] for k, v in d.items() if isinstance(v, list)})
     elif c.startswith("names "):  # names path - כל שמות הקבצים + תאריך
         d = call("GetIVR2Dir", path="ivr2:" + c[6:])
         print("CAT names", c[6:], [(f.get("name"), f.get("mtime")) for f in d.get("files") or []])
