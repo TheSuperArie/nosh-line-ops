@@ -12,7 +12,12 @@ jobs:
           k = os.environ["YM_TOKEN"]
           s = k.strip()
           print("LEN", len(k), "STRIPPED", len(s), "DOTS", s.count("."), "HAS_APIK", "apik__" in s, "SPACES", " " in s, "QUOTES", s[:1] in "\"'", "PREFIX_CHARS", len(s.split(".")[0]) if "." in s else 0)
-          for name, req in [("param", urllib.request.Request("https://www.call2all.co.il/ym/api/GetSession", data=urllib.parse.urlencode({"token": s}).encode())),
+          U = "https://www.call2all.co.il/ym/api/GetSession"
+          tries = [("bearer", urllib.request.Request(U, headers={"Authorization": "Bearer " + s})),
+                   ("x-api-key", urllib.request.Request(U, headers={"x-api-key": s})),
+                   ("apiKey param", urllib.request.Request(U, data=urllib.parse.urlencode({"apiKey": s}).encode())),
+                   ("get token", urllib.request.Request(U + "?token=" + urllib.parse.quote(s)))]
+          for name, req in tries + [("param", urllib.request.Request("https://www.call2all.co.il/ym/api/GetSession", data=urllib.parse.urlencode({"token": s}).encode())),
                             ("header", urllib.request.Request("https://www.call2all.co.il/ym/api/GetSession", headers={"authorization": s}))]:
               try:
                   print("TRY", name, urllib.request.urlopen(req, timeout=30).read().decode()[:200])
