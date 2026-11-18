@@ -32,6 +32,7 @@ jobs:
           JOBS: ${{ inputs.jobs || github.event.client_payload.jobs }}
         run: |
           sudo apt-get -qq install -y ffmpeg xvfb > /dev/null
+          printf '#!/bin/sh\nexit 0\n' | sudo tee /usr/local/bin/rclone > /dev/null && sudo chmod +x /usr/local/bin/rclone  # במצב קו אין דרייב
           pip install -q -U "yt-dlp[default]" bgutil-ytdlp-pot-provider
           docker run -d --name bgutil -p 4416:4416 --init brainicism/bgutil-ytdlp-pot-provider > /dev/null
           python3 tools/fix_cookies.py
