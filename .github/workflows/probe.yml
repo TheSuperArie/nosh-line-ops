@@ -12,6 +12,5 @@ jobs:
           curl -sL -A "$UA" https://www.kolhalashon.com/ -o p.html
           for f in main-EZZPDDUJ.js $(grep -oE 'chunk-[A-Z0-9]+\.js' p.html | sort -u); do curl -sL -A "$UA" "https://www.kolhalashon.com/$f" >> all.js; done
           echo "ALL $(wc -c < all.js)"
-          grep -oE 'https?://[a-zA-Z0-9.-]+(/[a-zA-Z0-9._/-]*)?' all.js | grep -v -E 'w3.org|google|angular|github|mozilla|chatrace|schema' | sort -u | head -30 | sed 's/^/HOST /'
-          grep -oE '(apiUrl|baseUrl|apiBase|API_URL|serverUrl)[^,;]{0,100}' all.js | sort -u | head -10 | sed 's/^/CFG /'
-          grep -oE '"[A-Za-z/]*(Shiur|shiur|Search|search|Rav|rav|Lecture)[A-Za-z/]*"' all.js | sort -u | head -40 | sed 's/^/EP /'
+          grep -oE 'apiUrl:"[^"]+"' all.js | sort -u | sed 's/^/BASE /'
+          grep -oE 'apiUrl\}[A-Za-z]+/[A-Za-z_]*(Rav|Shiur|Search|search|Series|Latest|New)[A-Za-z_]*[^`]{0,60}' all.js | sort -u | head -40 | sed 's/^/EP /'
