@@ -20,7 +20,7 @@ STATE = "/tmp/state.json"
 _CFG = dict(l.split("=", 1) for l in os.environ.get("COLUMNS_CFG", "").replace("\r", "").split("\n") if "=" in l)
 _CFG = {k.strip(): v.strip() for k, v in _CFG.items()}
 GMAIL_USER = os.environ.get("GMAIL_USER") or _CFG.get("user", "")
-GMAIL_PASS = (os.environ.get("GMAIL_APP_PASSWORD") or _CFG.get("pass", "")).replace(" ", "")
+GMAIL_PASS = (os.environ.get("GMAIL_APP_PASSWORD") or _CFG.get("pass", "")).replace(" ", "").strip()
 SECRET = os.environ.get("LINK_SECRET") or _CFG.get("link", "")
 CLICK_URL = os.environ.get("MAKE_CLICK_URL") or _CFG.get("click", "")
 _il_ok = None
