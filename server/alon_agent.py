@@ -99,7 +99,8 @@ def ffmpeg():
 def pending():
     """{מזהה: {"parts": {i: שם}, "n": n, "body": שם}} מתוך AgentCode."""
     out = {}
-    for f in ym("GetIVR2Dir", path="ivr2:/AgentCode").get("files") or []:
+    d = ym("GetIVR2Dir", path="ivr2:/AgentCode")
+    for f in (d.get("files") or []) + (d.get("ini") or []) + (d.get("html") or []):  # קבצי txt מופיעים ב-ini
         name = f.get("name") or ""
         m = re.match(r"^alon_(\d{4}-\d\d-\d\d_\d{4})_(\d+)of(\d+)\.txt$", name)
         if m:
