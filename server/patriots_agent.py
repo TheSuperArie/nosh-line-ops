@@ -99,10 +99,17 @@ def grab(vid, target):
     for f in (raw, mp3):
         if os.path.exists(f):
             os.remove(f)
-    r = subprocess.run([yd, "--cookies", cookies(), "-f", "bestaudio", "-o", raw, "--no-part", "--no-warnings",
-                        f"https://www.youtube.com/watch?v={vid}"], capture_output=True, text=True, env=env, timeout=3600)
-    if r.returncode or not os.path.exists(raw):
-        raise RuntimeError("yt-dlp: " + (r.stderr.strip()[-250:] or r.stdout.strip()[-250:]))
+    ck, errs = cookies(), []
+    for client in (None, "tv", "web_safari", "mweb", "web"):  # כמו בסוכן ב-GitHub: מנסים כמה "לקוחות" של יוטיוב
+        extra = ["--extractor-args", f"youtube:player_client={client}"] if client else []
+        r = subprocess.run([yd] + extra + ["--cookies", ck, "--remote-components", "ejs:github", "-f", "bestaudio/best",
+                            "-o", raw, "--no-part", "--no-warnings", f"https://www.youtube.com/watch?v={vid}"],
+                           capture_output=True, text=True, env=env, timeout=3600)
+        if r.returncode == 0 and os.path.exists(raw):
+            break
+        errs.append(f"{client or 'default'}: " + (r.stderr.strip()[-120:] or r.stdout.strip()[-120:]))
+    else:
+        raise RuntimeError("yt-dlp: " + " || ".join(errs))
     subprocess.run([ff, "-y", "-loglevel", "error", "-i", raw, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "24k", mp3], check=True, timeout=1800)
     os.remove(raw)
     out = subprocess.run(["curl", "-sS", "-m", "1800", "-F", f"token={KEY}", "-F", f"path={target}", "-F", "convertAudio=1",
@@ -131,7 +138,7 @@ if __name__ == "__main__":
     while True:
         try:
             now = datetime.now(IL)
-            if not st.get("tested") and time.time() - st.get("test_at", 0) > 3600:  # בדיקת כל השרשרת (לתיקיית בדיקה) עד שמצליחה
+            if not st.get("tested") and time.time() - st.get("test_at", 0) > 600:  # בדיקת כל השרשרת (לתיקיית בדיקה) עד שמצליחה
                 eps = episodes()
                 if "seen" not in st:
                     st["seen"] = [v for v, _ in eps]
