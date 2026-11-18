@@ -3,25 +3,10 @@ on:
   repository_dispatch:
     types: [probe]
 jobs:
-  p:
+  probe:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: |
-          cd server && python3 - <<'PY'
-          import radio_agent as r, json
-          for n in ("gly","103"):
-              try:
-                  for it in r.SRC[n]()[:6]: print("ITEM", n, it[0], it[1][:60], it[2][:90])
-              except Exception as e: print("ITEM", n, "ERR", e)
-          progs=[]
-          for ep in ("GetProgramShowOnTopMenu","GetPodcastShowOnTopMenu"):
-              progs += json.loads(r.get(f"https://api_new.radiodarom.co.il/api/Program/{ep}?radioStationId=2") or "[]")
-          import re
-          for p in [p for p in progs if "פתחי" in (p.get("title") or "")][:2]:
-              page=r.get(f"https://www.gly.co.il/program?id={p['id']}")
-              d=json.loads(re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>',page,re.S).group(1))
-              for day in (d["props"]["pageProps"]["programData"].get("itemsByDate") or [])[:2]:
-                  for it in day.get("items") or []:
-                      print("RAW", p['id'], day.get("date"), it.get("itemId"), it.get("isFullProgram"), bool(it.get("item_stream_url")), (it.get("itemTitle") or "")[:60])
-          PY
+      - env:
+          URL: ${{ github.event.client_payload.url }}
+        run: |
+          for u in $URL; do echo "=== $u"; curl -sS -m 30 -A "Mozilla/5.0" "$u" | head -c 2500; echo; done
