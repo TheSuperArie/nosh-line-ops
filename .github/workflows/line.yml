@@ -1,0 +1,56 @@
+name: line
+# תוכניות לקו (12/13 מהדורות, אולפן שישי, פגוש את העיתונות) - מופעל מהשרת (shows_agent). מאגר ציבורי = בלי עלות דקות.
+on:
+  workflow_dispatch:
+    inputs:
+      jobs: {description: "LINE_JOB-ים מופרדים ב-;", required: true}
+  repository_dispatch:
+    types: [line]
+concurrency: line
+env:
+  YM_TOKEN: ${{ secrets.YM_TOKEN }}
+  LINK_SECRET: line-local
+  ACTION: line
+jobs:
+  line:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -q zmanim
+      - id: shabbat
+        run: python3 tools/shabbat_guard.py
+      - uses: denoland/setup-deno@v2
+        if: steps.shabbat.outputs.ok == 'true'
+        with: {deno-version: v2.x}
+      - name: כלים
+        if: steps.shabbat.outputs.ok == 'true'
+        env:
+          YT_COOKIES: ${{ secrets.YT_COOKIES }}
+          JOBS: ${{ inputs.jobs || github.event.client_payload.jobs }}
+        run: |
+          sudo apt-get -qq install -y ffmpeg xvfb > /dev/null
+          pip install -q -U "yt-dlp[default]" bgutil-ytdlp-pot-provider
+          docker run -d --name bgutil -p 4416:4416 --init brainicism/bgutil-ytdlp-pot-provider > /dev/null
+          python3 tools/fix_cookies.py
+          case "$JOBS" in *"12|"*|*"13|"*)
+            echo "NEEDS_BROWSER=1" >> "$GITHUB_ENV"
+            pip install -q playwright patchright && python -m playwright install --with-deps chromium >/dev/null
+            which google-chrome >/dev/null || python -m patchright install chrome >/dev/null || true ;;
+          esac
+          echo "::notice title=LINE jobs::$JOBS"
+      - name: העלאה לקו
+        if: steps.shabbat.outputs.ok == 'true'
+        env:
+          JOBS: ${{ inputs.jobs || github.event.client_payload.jobs }}
+        run: |
+          IFS=';' read -ra JS <<< "$JOBS"
+          for J in "${JS[@]}"; do
+            [ -z "$J" ] && continue
+            echo "::group::$J"
+            if [ -n "$NEEDS_BROWSER" ]; then LINE_JOB="$J" HEADFUL=1 xvfb-run -a python agent.py line || echo "::warning title=LINE failed::$J"
+            else LINE_JOB="$J" python agent.py line || echo "::warning title=LINE failed::$J"; fi
+            echo "::endgroup::"
+          done
