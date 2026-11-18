@@ -33,15 +33,22 @@ if not vid or (vid in done and not TEST):
     print(f"::notice title=PATRIOTS::nothing to do ({vid or 'no episode'})")
     sys.exit(0)
 ok = False
-for client in (None, "web_safari", "mweb", "tv"):
+# קודם עם עוגיות, ואם יוטיוב חוסם (403) - גם בלי עוגיות
+for cookies, client in [(True, None), (True, "web_safari"), (True, "mweb"), (True, "tv"),
+                        (False, None), (False, "tv"), (False, "web_safari"), (False, "mweb"), (False, "tv_simply")]:
     extra = ["--extractor-args", f"youtube:player_client={client}"] if client else []
-    r = subprocess.run(["yt-dlp"] + extra + ["--cookies", "/tmp/cookies.txt", "-f", "bestaudio/best", "-o", "/tmp/raw",
+    if cookies:
+        extra += ["--cookies", "/tmp/cookies.txt"]
+    for f in ("/tmp/raw",):
+        if os.path.exists(f):
+            os.remove(f)
+    r = subprocess.run(["yt-dlp"] + extra + ["-f", "bestaudio/best", "-o", "/tmp/raw",
                         "--no-part", "--no-warnings", f"https://www.youtube.com/watch?v={vid}"], capture_output=True, text=True)
     if r.returncode == 0 and os.path.exists("/tmp/raw"):
         ok = True
-        print(f"::notice title=PATRIOTS client::{client or 'default'}")
+        print(f"::notice title=PATRIOTS client::{client or 'default'} cookies={cookies}")
         break
-    print(f"::warning title=PATRIOTS {client or 'default'}::{(r.stderr or r.stdout).strip()[-300:]}")
+    print(f"::warning title=PATRIOTS {client or 'default'} cookies={cookies}::{(r.stderr or r.stdout).strip()[-300:]}")
 if not ok:
     sys.exit(1)
 subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", "/tmp/raw", "-vn", "-ac", "1", "-ar", "16000", "-b:a", "24k", "/tmp/p.mp3"], check=True)
