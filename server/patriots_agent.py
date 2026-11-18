@@ -131,17 +131,20 @@ if __name__ == "__main__":
     while True:
         try:
             now = datetime.now(IL)
-            if "seen" not in st:  # פעם ראשונה: בדיקת כל השרשרת על הפרק האחרון (לתיקיית בדיקה), וסימון הקיימים
+            if not st.get("tested") and time.time() - st.get("test_at", 0) > 3600:  # בדיקת כל השרשרת (לתיקיית בדיקה) עד שמצליחה
                 eps = episodes()
-                st["seen"] = [v for v, _ in eps]
+                if "seen" not in st:
+                    st["seen"] = [v for v, _ in eps]
+                st["test_at"] = time.time()
                 if eps:
                     try:
                         mb = grab(eps[0][0], TEST + ".wav")
+                        st["tested"] = True
                         status(st, f"בדיקה הצליחה: {eps[0][1][:60]} ({mb:.1f}MB)")
                     except Exception as e:  # noqa: BLE001
                         status(st, f"בדיקה נכשלה: {str(e)[:200]}")
                 save(st)
-            elif now.hour >= 19 or now.hour < 9:
+            elif "seen" in st and (now.hour >= 19 or now.hour < 9):
                 for vid, title in episodes():
                     if vid in st["seen"]:
                         continue
