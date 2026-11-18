@@ -1,7 +1,7 @@
 """סוכן הרדיו לקו נווה שלום - רץ בשרת (בלי GitHub): בודק כל 5 דקות אם עלתה תוכנית מלאה חדשה,
 מוריד את ה-MP3 ישירות מהאתר ומעלה לשלוחה (ימות ממיר בעצמו). שמות קבצים קבועים: החדש מקבל את המספר הגבוה.
 פתחי וזמרי (גלי ישראל) א'-ה' -> 2/1/1 | ינון מגל ובן כספית (103) ב'-ד' -> 2/1/2 | מחשבות בע"מ (גלצ) ו' -> 2/2"""
-import html, json, os, re, subprocess, time, urllib.parse, urllib.request
+import html, io, json, os, platform, re, stat, subprocess, tarfile, time, urllib.parse, urllib.request
 from datetime import datetime
 try:
     from zoneinfo import ZoneInfo
@@ -107,10 +107,32 @@ def next_slot(folder, keep):
     return f"{(nums[-1] + 1) if nums else 100:03d}"
 
 
+def ffmpeg():
+    """ffmpeg סטטי בתיקייה bin (ימות דוחה קבצים גדולים - 413 - לכן מקטינים לפני ההעלאה)."""
+    ff = os.path.join(DIR, "bin", "ffmpeg")
+    if not os.path.exists(ff):
+        os.makedirs(os.path.dirname(ff), exist_ok=True)
+        arm = "aarch64" in platform.machine() or "arm" in platform.machine()
+        t = subprocess.run(["curl", "-sSL", "-m", "600", "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-"
+                            + ("arm64" if arm else "amd64") + "-static.tar.xz"], capture_output=True).stdout
+        with tarfile.open(fileobj=io.BytesIO(t), mode="r:xz") as tf:
+            m = next(x for x in tf.getmembers() if x.name.endswith("/ffmpeg"))
+            open(ff, "wb").write(tf.extractfile(m).read())
+        os.chmod(ff, os.stat(ff).st_mode | stat.S_IEXEC)
+    return ff
+
+
 def upload(url, folder, keep, title):
     r = subprocess.run(["curl", "-sSL", "-m", "1800", "-A", UA, "-o", TMP, url], capture_output=True)
     if r.returncode or not os.path.exists(TMP) or os.path.getsize(TMP) < 500000:
         raise RuntimeError("download failed: " + r.stderr.decode("utf-8", "replace")[:150])
+    small = TMP + ".small.mp3"
+    c = subprocess.run([ffmpeg(), "-y", "-loglevel", "error", "-i", TMP, "-vn", "-ac", "1", "-ar", "16000",
+                        "-b:a", "24k", small], capture_output=True)
+    os.remove(TMP)
+    if c.returncode or not os.path.exists(small):
+        raise RuntimeError("ffmpeg failed: " + c.stderr.decode("utf-8", "replace")[:150])
+    os.replace(small, TMP)
     mb = os.path.getsize(TMP) / 1048576
     slot = next_slot(folder, keep)
     out = subprocess.run(["curl", "-sS", "-m", "3600", "-F", f"token={KEY}", "-F", f"path=ivr2:{folder}/{slot}.wav",
