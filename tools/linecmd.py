@@ -1,5 +1,5 @@
 """בדיקה: קריאת קבצים ותיקיות בקו (קריאה בלבד). הפקודות מגיעות ב-INSPECT (מופרדות ב-;)."""
-import json, os, urllib.parse, urllib.request
+import json, os, re, urllib.parse, urllib.request
 API = "https://www.call2all.co.il/ym/api/"
 KEY = os.environ["YM_TOKEN"].strip()
 def call(name, **p):
@@ -13,6 +13,16 @@ for c in os.environ.get("INSPECT", "").split(";"):
     if c.startswith("mv "):  # mv a|b (נתיבים מלאים ivr2:)
         a, b = c[3:].split("|", 1)
         print("CAT mv", a, b, json.dumps(call("FileAction", action="move", what=a, target=b), ensure_ascii=False)[:150])
+    elif c.startswith("mvall "):  # mvall /src|/dst - מעביר את כל קבצי NNN.wav/tts (לא ext.ini/M1000)
+        a, b = c[6:].split("|", 1)
+        d = call("GetIVR2Dir", path="ivr2:" + a)
+        n = 0
+        for f in (d.get("files") or []) + (d.get("ini") or []):
+            nm = f.get("name") or ""
+            if re.match(r"^\d{3}\.(wav|tts)$", nm):
+                r = call("FileAction", action="move", what=f"ivr2:{a}/{nm}", target=f"ivr2:{b}/{nm}")
+                n += r.get("responseStatus") == "OK"
+        print("CAT mvall", a, b, "moved", n)
     elif c.startswith("names "):  # names path - כל שמות הקבצים + תאריך
         d = call("GetIVR2Dir", path="ivr2:" + c[6:])
         print("CAT names", c[6:], [(f.get("name"), f.get("mtime")) for f in d.get("files") or []])
