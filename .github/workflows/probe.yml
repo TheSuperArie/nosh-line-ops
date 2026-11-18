@@ -12,5 +12,7 @@ jobs:
           curl -sL -A "$UA" https://www.kolhalashon.com/ -o p.html
           for f in main-EZZPDDUJ.js $(grep -oE 'chunk-[A-Z0-9]+\.js' p.html | sort -u); do curl -sL -A "$UA" "https://www.kolhalashon.com/$f" >> all.js; done
           echo "ALL $(wc -c < all.js)"
-          grep -oE 'apiUrl:"[^"]+"' all.js | sort -u | sed 's/^/BASE /'
-          grep -oE 'apiUrl\}[A-Za-z]+/[A-Za-z_]*(Rav|Shiur|Search|search|Series|Latest|New)[A-Za-z_]*[^`]{0,60}' all.js | sort -u | head -40 | sed 's/^/EP /'
+          grep -oE 'apiUrl:[^,}]{0,120}' all.js | sort -u | head | sed 's/^/BASE /'
+          grep -oE '.{0,60}Me=\{.{0,200}' all.js | head -3 | sed 's/^/ME /'
+          grep -oE 'apiUrl\}[A-Za-z]+/(WebSite_)?[A-Za-z_]*(RavShiurim|Rav_|GetRav|ShiurimOfRav|RavPage|Filter|Shiurim)[A-Za-z_]*[^`]{0,80}' all.js | sort -u | head -30 | sed 's/^/EP /'
+          grep -oE 'apiUrl\}[A-Za-z]+/[A-Za-z_]*(Play|Audio|Mp3|mp3|Download|Stream)[A-Za-z_]*[^`]{0,60}' all.js | sort -u | head -15 | sed 's/^/PL /'
