@@ -234,15 +234,15 @@ def render(text):
     with open(raw, "wb") as out:
         for part in chunks(text):
             p = os.path.join(tmp, f"alon_{uuid.uuid4().hex}.mp3")
-            for attempt in range(3):
+            for attempt in range(6):  # השירות של מיקרוסופט לפעמים מגביל זמנית ("No audio was received")
                 try:
                     asyncio.run(asyncio.wait_for(edge_tts.Communicate(part, VOICE, rate=RATE).save(p), 240))
                     if os.path.getsize(p) > 1000:
                         break
                 except Exception as e:  # noqa: BLE001
-                    if attempt == 2:
+                    if attempt == 5:
                         raise RuntimeError("tts failed: " + str(e)[:120])
-                    time.sleep(5)
+                    time.sleep(15 * (attempt + 1))
             out.write(open(p, "rb").read())
             os.remove(p)
     small = raw + ".small.mp3"
@@ -306,9 +306,13 @@ def process(iid, e, st):
                 jokes = pdf_jokes(pdf)
                 if len(jokes) > 1:
                     items = list(reversed(jokes))  # הראשון בעלון מקבל את המספר הגבוה = נשמע ראשון
-            slots = []
-            for it in items:
+            key = f"{iid}|{ext}"
+            slots = st.setdefault("partial", {}).setdefault(key, [])  # התקדמות נשמרת אחרי כל קובץ
+            for it in items[len(slots):]:
                 slots.append(upload(render(speakable(it)), f"/8/3/{ext}"))
+                save(st)
+                time.sleep(2)
+            st["partial"].pop(key, None)
             st.setdefault("slots", {}).setdefault(ext, []).append([iid, slots])
             prune(st, ext)
             done.append(ext)
@@ -332,22 +336,26 @@ def in_window(now):
 
 
 def cycle(st):
+    """מחזיר True אם נשארה עבודה (כישלון) - אז ממשיכים לנסות כל 10 דקות גם מחוץ לחלון."""
+    left = False
     for iid, e in sorted(pending(st).items()):
         try:
-            process(iid, e, st)
+            left |= not process(iid, e, st)
         except Exception as ex:  # noqa: BLE001
+            left = True
             log(iid, "error", str(ex)[:200])
+    return left
 
 
 if __name__ == "__main__":
     log("alon agent started")
     st = load()
-    first = True
+    again = True
     while True:
-        if first or in_window(datetime.now(IL)):
+        if again or in_window(datetime.now(IL)):
             try:
-                cycle(st)
+                again = cycle(st)
             except Exception as ex:  # noqa: BLE001
                 log("cycle error", str(ex)[:200])
-            first = False
+                again = True
         time.sleep(600)
