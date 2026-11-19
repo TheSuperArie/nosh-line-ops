@@ -112,6 +112,29 @@ def c14():
     return out
 
 
+# ---------- סדרות מיוטיוב שיורדות במאגר הציבורי (אירוע ytline) ----------
+# הרב ברוך רוזנבלום - דרשה שבועית בערוץ קהילת 'אבני החושן' (עולה בד"כ שלישי בלילה ~23:30-00:30).
+# לפי הערוץ ולא לפי הפלייליסט, כי לכל חומש יש פלייליסט נפרד. נשמרות 2 אחרונות (בשלישית - הישנה נמחקת).
+YTLINE = {
+    "rosen": {"ch": "UCPjRHyDm5ngHYHNBn1LMc3g", "match": "רוזנבלום", "folder": "/8/2/1", "keep": 2,
+              "done": "ivr2:/AgentCode/rosen_done.json", "label": "ROSENBLUM", "name": "הרב רוזנבלום"},
+}
+
+
+def yt_channel(cfg):
+    x = get(f"https://www.youtube.com/feeds/videos.xml?channel_id={cfg['ch']}")
+    if "<entry>" not in x:
+        raise RuntimeError("yt rss: " + x[:120])
+    out = []
+    for e in re.findall(r"<entry>(.*?)</entry>", x, re.S):
+        m = re.search(r"<title>(.*?)</title>", e)
+        t = html.unescape(m.group(1)) if m else ""
+        vid = re.search(r"<yt:videoId>([^<]+)", e)
+        if vid and all(w in t for w in cfg["match"].split("|")):
+            out.append(vid.group(1))
+    return out
+
+
 def rss_full(url, need_full=True):
     out = []
     for it in re.findall(r"<item>(.*?)</item>", get(url), re.S)[:15]:
@@ -140,7 +163,7 @@ def gly():
 
 WATCH = [  # (שם, פונקציה, משימה, שעות פעילות בשעון ישראל) - הרדיו עבר ל-radio_agent
     ("c14", c14, "PAT_OPS", (19, 9)),   # הפטריוטים: מופעל במאגר הציבורי nosh-line-ops (בלי עלות דקות)
-]
+] + [(k, (lambda c=c: yt_channel(c)), "YT:" + k, (0, 24)) for k, c in YTLINE.items()]
 
 
 def active(hours, now):
@@ -194,6 +217,17 @@ def cycle(st):
                 except Exception as e:  # noqa: BLE001
                     status(st, f"הפטריוטים {vid} - שגיאה בהפעלה: {str(e)[:100]}")
                     st["seen"][name] = [i for i in st["seen"][name] if i != vid]  # ננסה שוב בסבב הבא
+        elif new and job.startswith("YT:"):
+            cfg = YTLINE[job[3:]]
+            for vid in new[:2]:
+                payload = {k: str(v) for k, v in cfg.items() if k in ("folder", "keep", "done", "label")}
+                payload["vid"] = vid
+                try:
+                    code = dispatch([], repo="TheSuperArie/nosh-line-ops", event="ytline", payload=payload)
+                    status(st, f"{cfg['name']} חדש {vid} - הופעל ב-nosh-line-ops ({code})")
+                except Exception as e:  # noqa: BLE001
+                    status(st, f"{cfg['name']} {vid} - שגיאה בהפעלה: {str(e)[:100]}")
+                    st["seen"][name] = [i for i in st["seen"][name] if i != vid]
         elif new:
             log("NEW", name, new[:3])
             if job not in st["pending"]:

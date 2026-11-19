@@ -1,8 +1,9 @@
 name: patriots
-# הפטריוטים -> שלוחה 2/1/3. מופעל מהשרת (shows_agent) כשעולה פרק מלא חדש. מאגר ציבורי = בלי עלות דקות.
+# הפטריוטים -> שלוחה 2/1/3 (אירוע patriots), וכל סדרה אחרת מיוטיוב (אירוע ytline, למשל רוזנבלום -> 8/2/1).
+# מופעל מהשרת (shows_agent) כשעולה סרטון חדש. מאגר ציבורי = בלי עלות דקות.
 on:
   repository_dispatch:
-    types: [patriots]
+    types: [patriots, ytline]
   workflow_dispatch:
 concurrency: patriots
 jobs:
@@ -27,3 +28,9 @@ jobs:
           YT_COOKIES: ${{ secrets.YT_COOKIES }}
           VID: ${{ github.event.client_payload.vid }}
           TEST: ${{ github.event.client_payload.test }}
+          FOLDER: ${{ github.event.client_payload.folder }}
+          KEEP: ${{ github.event.client_payload.keep }}
+          DONE: ${{ github.event.client_payload.done }}
+          CH: ${{ github.event.client_payload.ch }}
+          MATCH: ${{ github.event.client_payload.match }}
+          LABEL: ${{ github.event.client_payload.label }}
