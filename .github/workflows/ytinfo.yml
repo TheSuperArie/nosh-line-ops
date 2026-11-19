@@ -1,0 +1,25 @@
+name: ytinfo
+# אבחון: פרטי פלייליסט/ערוץ ביוטיוב (RSS + yt-dlp). client_payload.pl = מזהה פלייליסט
+on:
+  repository_dispatch:
+    types: [ytinfo]
+jobs:
+  i:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - run: |
+          pip install -q -U "yt-dlp[default]"
+          echo "=== RSS"
+          curl -sS -m 30 "https://www.youtube.com/feeds/videos.xml?playlist_id=$PL" | python3 -c '
+          import re,sys
+          x=sys.stdin.read()
+          print(re.search(r"<title>([^<]+)",x).group(1), "|", (re.search(r"<name>([^<]+)",x) or [None,""])[1] if re.search(r"<name>([^<]+)",x) else "")
+          for e in re.findall(r"<entry>(.*?)</entry>",x,re.S):
+              g=lambda p:(re.search(p,e) or [None,""])[1] if re.search(p,e) else ""
+              print(g(r"<published>([^<]+)"), g(r"<yt:videoId>([^<]+)"), g(r"<title>([^<]+)"))
+          '
+          echo "=== FLAT"
+          yt-dlp --flat-playlist --print "%(playlist_index)s|%(id)s|%(title)s|%(duration)s" "https://www.youtube.com/playlist?list=$PL" 2>&1 | tail -n 40
+        env:
+          PL: ${{ github.event.client_payload.pl }}
