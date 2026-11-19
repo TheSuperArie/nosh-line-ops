@@ -10,6 +10,8 @@ DONE = (os.environ.get("DONE") or "ivr2:/AgentCode/patriots_done.json").strip()
 CH = (os.environ.get("CH") or "UCKEImtWikw9usC1pl_9m1nQ").strip()
 MATCH = [w for w in (os.environ.get("MATCH") or "הפטריוטים|המלאה").split("|") if w]
 LABEL = (os.environ.get("LABEL") or "PATRIOTS").strip()
+INTRO = (os.environ.get("INTRO") or "").strip()  # parasha = לפני הדרשה מקריאים "פרשת ..." (מנוקד)
+PLF = (os.environ.get("PLF") or "").strip()  # מעלים רק סרטון שנמצא בפלייליסט של הערוץ ששמו מכיל את המילה הזו
 
 
 def ym(name, **p):
@@ -39,6 +41,24 @@ TEST = os.environ.get("TEST") == "1"  # בדיקה: מעלה לתיקיית Agen
 if not vid or (vid in done and not TEST):
     print(f"::notice title={LABEL}::nothing to do ({vid or 'no episode'})")
     sys.exit(0)
+if PLF and not TEST:  # רק דרשות מהפלייליסטים של הסדרה (לכל חומש פלייליסט), לא כל סרטון בערוץ
+    pls = subprocess.run(["yt-dlp", "--flat-playlist", "--print", "%(id)s\t%(title)s",
+                          f"https://www.youtube.com/channel/{CH}/playlists"], capture_output=True, text=True).stdout
+    pls = [l.split("\t")[0] for l in pls.splitlines() if "\t" in l and PLF in l.split("\t", 1)[1]]
+    found = None
+    for pl in pls:
+        ids = subprocess.run(["yt-dlp", "--flat-playlist", "--print", "%(id)s", f"https://www.youtube.com/playlist?list={pl}"],
+                             capture_output=True, text=True).stdout.split()
+        if vid in ids:
+            found = pl
+            break
+    if not pls:
+        print(f"::error title={LABEL}::no playlists matching {PLF} (YouTube listing failed?)")
+        sys.exit(1)
+    if not found:  # לא נמצא (או שעוד לא הוכנס לפלייליסט) - לא מסמנים כבוצע, השרת ינסה שוב
+        print(f"::notice title={LABEL} skip::{vid} not in any of {len(pls)} '{PLF}' playlists")
+        sys.exit(0)
+    print(f"::notice title={LABEL} playlist::{vid} in {found}")
 ok = False
 # קודם עם עוגיות, ואם יוטיוב חוסם (403) - גם בלי עוגיות
 for cookies, client in [(True, None), (True, "web_safari"), (True, "mweb"), (True, "tv"),
@@ -46,10 +66,11 @@ for cookies, client in [(True, None), (True, "web_safari"), (True, "mweb"), (Tru
     extra = ["--extractor-args", f"youtube:player_client={client}"] if client else []
     if cookies:
         extra += ["--cookies", "/tmp/cookies.txt"]
-    for f in ("/tmp/raw",):
+    for f in ("/tmp/raw", "/tmp/meta.txt"):
         if os.path.exists(f):
             os.remove(f)
     r = subprocess.run(["yt-dlp"] + extra + ["-f", "bestaudio/best", "-o", "/tmp/raw",
+                        "--print-to-file", "%(title)s\t%(timestamp)s", "/tmp/meta.txt",
                         "--no-part", "--no-warnings", f"https://www.youtube.com/watch?v={vid}"], capture_output=True, text=True)
     if r.returncode == 0 and os.path.exists("/tmp/raw"):
         ok = True
@@ -58,7 +79,23 @@ for cookies, client in [(True, None), (True, "web_safari"), (True, "mweb"), (Tru
     print(f"::warning title={LABEL} {client or 'default'} cookies={cookies}::{(r.stderr or r.stdout).strip()[-300:]}")
 if not ok:
     sys.exit(1)
-subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", "/tmp/raw", "-vn", "-ac", "1", "-ar", "16000", "-b:a", "24k", "/tmp/p.mp3"], check=True)
+intro = ""
+if INTRO == "parasha":
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import parasha
+    title, _, ts = (open("/tmp/meta.txt", encoding="utf-8").read().strip().splitlines() or ["\t"])[0].partition("\t")
+    intro = parasha.name(title, ts if ts.isdigit() else None)
+    print(f"::notice title={LABEL} intro::{title} -> {intro or '(not found)'}")
+if intro:  # קריין הקו (רמי) אומר את שם הפרשה, הפסקה קצרה, ואז הדרשה
+    subprocess.run(["edge-tts", "--voice", "fr-FR-RemyMultilingualNeural", "--rate=+0%", "--text", intro + ".",
+                    "--write-media", "/tmp/intro.mp3"], check=True, timeout=120)
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", "/tmp/intro.mp3", "-f", "lavfi", "-t", "0.7", "-i", "anullsrc=r=16000:cl=mono",
+                    "-i", "/tmp/raw", "-filter_complex",
+                    "[0:a]aresample=16000,aformat=channel_layouts=mono[a];[1:a]aformat=channel_layouts=mono[b];"
+                    "[2:a]aresample=16000,aformat=channel_layouts=mono[c];[a][b][c]concat=n=3:v=0:a=1[o]",
+                    "-map", "[o]", "-ac", "1", "-ar", "16000", "-b:a", "24k", "/tmp/p.mp3"], check=True)
+else:
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", "/tmp/raw", "-vn", "-ac", "1", "-ar", "16000", "-b:a", "24k", "/tmp/p.mp3"], check=True)
 if TEST:
     FOLDER = "/AgentCode"
 d = ym("GetIVR2Dir", path="ivr2:" + FOLDER)

@@ -18,7 +18,7 @@ jobs:
         with: {deno-version: v2.x}
       - run: |
           sudo apt-get -qq install -y ffmpeg > /dev/null
-          pip install -q -U "yt-dlp[default]" bgutil-ytdlp-pot-provider
+          pip install -q -U "yt-dlp[default]" bgutil-ytdlp-pot-provider edge-tts
           docker run -d --name bgutil -p 4416:4416 --init brainicism/bgutil-ytdlp-pot-provider > /dev/null
           for i in $(seq 1 30); do curl -s localhost:4416/ping > /dev/null && break; sleep 1; done
           python3 tools/fix_cookies.py && cp cookies.txt /tmp/cookies.txt
@@ -34,3 +34,5 @@ jobs:
           CH: ${{ github.event.client_payload.ch }}
           MATCH: ${{ github.event.client_payload.match }}
           LABEL: ${{ github.event.client_payload.label }}
+          INTRO: ${{ github.event.client_payload.intro }}
+          PLF: ${{ github.event.client_payload.plf }}

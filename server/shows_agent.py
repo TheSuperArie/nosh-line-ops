@@ -117,7 +117,8 @@ def c14():
 # לפי הערוץ ולא לפי הפלייליסט, כי לכל חומש יש פלייליסט נפרד. נשמרות 2 אחרונות (בשלישית - הישנה נמחקת).
 YTLINE = {
     "rosen": {"ch": "UCPjRHyDm5ngHYHNBn1LMc3g", "match": "רוזנבלום", "folder": "/8/2/1", "keep": 2,
-              "done": "ivr2:/AgentCode/rosen_done.json", "label": "ROSENBLUM", "name": "הרב רוזנבלום"},
+              "done": "ivr2:/AgentCode/rosen_done.json", "label": "ROSENBLUM", "name": "הרב רוזנבלום",
+              "plf": "רוזנבלום", "intro": "parasha"},  # רק מהפלייליסטים "הרב רוזנבלום - חומש ..."; לפני כל דרשה "פרשת ..."
 }
 
 
@@ -243,7 +244,7 @@ def cycle(st):
                     continue
             except Exception:  # noqa: BLE001
                 pass
-        payload = {k: str(v) for k, v in cfg.items() if k in ("folder", "keep", "done", "label")}
+        payload = {k: str(v) for k, v in cfg.items() if k in ("folder", "keep", "done", "label", "ch", "plf", "intro")}
         payload["vid"] = vid
         q["t"], q["n"] = time.time(), q["n"] + 1
         try:
