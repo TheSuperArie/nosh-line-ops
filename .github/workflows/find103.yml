@@ -1,0 +1,12 @@
+name: find103
+on:
+  repository_dispatch:
+    types: [find103]
+jobs:
+  f:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/find103.py
+        env:
+          Q: ${{ github.event.client_payload.q }}
