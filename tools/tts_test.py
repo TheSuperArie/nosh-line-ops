@@ -9,12 +9,12 @@ async def one(t, voice):
         return "OK"
     except Exception as e:
         return "FAIL " + str(e)[:40]
-tests = []
-for k in ["/8/2/M1000", "/3/M1000", "/9/M1000"]:
-    t = P[k]
-    tests += [(k + " nikud", t), (k + " plain", NIK.sub("", t))]
-    words = t.split()
-    tests += [(k + " first-half", " ".join(words[:len(words)//2])), (k + " second-half", " ".join(words[len(words)//2:]))]
-for v in ["fr-FR-RemyMultilingualNeural", "he-IL-AvriNeural"]:
-    for name, t in tests:
-        print("CAT", v[:10], name, asyncio.run(one(t, v)), flush=True)
+for k in ["/8/2/M1000", "/M1000@new", "/M1000"]:
+    for kw in [{}, {"pitch": "+0Hz"}, {"pitch": "+6Hz"}, {"rate": "+8%", "pitch": "+6Hz"}]:
+        async def go():
+            try:
+                await asyncio.wait_for(edge_tts.Communicate(P[k], "fr-FR-RemyMultilingualNeural", **({"rate": "+12%"} | kw)).save("/tmp/t.mp3"), 40)
+                return "OK"
+            except Exception as e:
+                return "FAIL " + str(e)[:40]
+        print("CAT", k, kw, asyncio.run(go()), flush=True)
