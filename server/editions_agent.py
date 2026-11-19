@@ -22,7 +22,7 @@ STATE = os.path.join(DIR, "editions_state.json")
 TMP = os.path.join(DIR, "editions_tmp.mp3")
 IL = ZoneInfo("Asia/Jerusalem")
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-SELFTEST = "v4"
+SELFTEST = "v5"
 SELFTEST_CH = ("13",)  # 12 כבר עבר בבדיקה (19/11) - לא מעמיסים על מאקו  # להעלות כדי להריץ שוב את הבדיקה העצמית
 
 # יום: 0=שני ... 4=שישי 5=שבת 6=ראשון. החלון מתחיל בשעה h1 ביום שברשימה ונמשך עד h2 בבוקר שאחריו.
@@ -230,6 +230,18 @@ def grab13(eid, out, secs=None):
         info = "api: " + str(e)[:150]
     urls += [f"{base}/format/applehttp/protocol/https/a.m3u8?referrer={ref}"]
     errs = []
+    ts = out + ".ts"
+    for u in [x for x in urls if "applehttp" in x or ".m3u8" in x][:2]:  # קודם: הורדה עצמית + פענוח, ואז ffmpeg על קובץ מקומי
+        try:
+            n = hls_local(u, hd, ts, secs)
+            to_mp3(ts, out, secs, {})
+            log(f"13: {n} חלקים ירדו ופוענחו")
+            return
+        except Exception as e:  # noqa: BLE001
+            errs.append("local: " + str(e)[-200:])
+        finally:
+            if os.path.exists(ts):
+                os.remove(ts)
     for u in urls:
         try:
             to_mp3(u, out, secs, hd)
@@ -237,6 +249,69 @@ def grab13(eid, out, secs=None):
         except Exception as e:  # noqa: BLE001
             errs.append(re.sub(r"/ks/[^/?]+", "/ks/…", u)[-90:] + " -> " + probe(u, hd) + " | " + str(e)[-120:])
     raise RuntimeError(info + " || " + " || ".join(errs))
+
+
+def curl_bytes(url, headers, out=None):
+    cmd = ["curl", "-sSLf", "-m", "120", "--retry", "3", "-A", UA] + sum((["-H", f"{k}: {v}"] for k, v in headers.items()), [])
+    if out:
+        cmd += ["-o", out]
+    r = subprocess.run(cmd + [url], capture_output=True)
+    if r.returncode:
+        raise RuntimeError(f"curl {r.returncode} {url[:60]}: {r.stderr.decode('utf-8', 'replace')[:120]}")
+    return r.stdout
+
+
+def hls_local(url, headers, out_ts, secs=None):
+    """מוריד HLS לבד (רשימה -> חלקים -> פענוח AES-128 עם openssl) לקובץ TS מקומי.
+    ה-ffmpeg הסטטי בשרת קורס על ה-HLS המוצפן של 13, אבל קובץ מקומי הוא ממיר בלי בעיה."""
+    text = curl_bytes(url, headers).decode("utf-8", "replace")
+    if "#EXT-X-STREAM-INF" in text:  # רשימת איכויות - לוקחים את הנמוכה
+        url = lowest_variant(url, headers) or url
+        text = curl_bytes(url, headers).decode("utf-8", "replace")
+    seq, key, iv, keys, total, n = 0, None, None, {}, 0.0, 0
+    m = re.search(r"#EXT-X-MEDIA-SEQUENCE:(\d+)", text)
+    seq = int(m.group(1)) if m else 0
+    tmp = out_ts + ".part"
+    with open(out_ts, "wb") as out:
+        dur = 0.0
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("#EXT-X-KEY"):
+                meth = re.search(r"METHOD=([A-Z0-9-]+)", line)
+                if meth and meth.group(1) == "NONE":
+                    key = None
+                    continue
+                if not meth or meth.group(1) != "AES-128":
+                    raise RuntimeError("הצפנה לא נתמכת: " + line[:80])
+                ku = urllib.parse.urljoin(url, re.search(r'URI="([^"]+)"', line).group(1))
+                if ku not in keys:
+                    keys[ku] = curl_bytes(ku, headers).hex()
+                key = keys[ku]
+                ivm = re.search(r"IV=0x([0-9a-fA-F]+)", line)
+                iv = ivm.group(1).rjust(32, "0") if ivm else None
+            elif line.startswith("#EXTINF:"):
+                try:
+                    dur = float(line[8:].split(",")[0])
+                except ValueError:
+                    dur = 0.0
+            elif line and not line.startswith("#"):
+                curl_bytes(urllib.parse.urljoin(url, line), headers, tmp)
+                if key:
+                    r = subprocess.run(["openssl", "aes-128-cbc", "-d", "-K", key, "-iv", iv or format(seq + n, "032x"),
+                                        "-in", tmp, "-out", tmp + ".dec"], capture_output=True)
+                    if r.returncode:
+                        raise RuntimeError("openssl: " + r.stderr.decode("utf-8", "replace")[:150])
+                    os.replace(tmp + ".dec", tmp)
+                out.write(open(tmp, "rb").read())
+                n += 1
+                total += dur
+                if secs and total >= secs:
+                    break
+    if os.path.exists(tmp):
+        os.remove(tmp)
+    if not n:
+        raise RuntimeError("אין חלקים ברשימה")
+    return n
 
 
 def lowest_variant(master, headers):
@@ -357,8 +432,10 @@ def grab12(ep_url, out, secs=None):
 
 # ---------- הורדה והעלאה ----------
 def to_mp3(url, out, secs, headers):
-    hd = "".join(f"{k}: {v}\r\n" for k, v in headers.items())
-    cmd = [ffmpeg(), "-y", "-loglevel", "warning", "-user_agent", UA, "-headers", hd, "-i", url]
+    cmd = [ffmpeg(), "-y", "-loglevel", "warning"]
+    if headers:  # כתובת ברשת (בקובץ מקומי - בלי כותרות)
+        cmd += ["-user_agent", UA, "-headers", "".join(f"{k}: {v}\r\n" for k, v in headers.items())]
+    cmd += ["-i", url]
     if secs:
         cmd += ["-t", str(secs)]
     cmd += ["-vn", "-ac", "1", "-ar", "16000", "-b:a", "24k", out]
