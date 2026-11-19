@@ -22,7 +22,8 @@ STATE = os.path.join(DIR, "editions_state.json")
 TMP = os.path.join(DIR, "editions_tmp.mp3")
 IL = ZoneInfo("Asia/Jerusalem")
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-SELFTEST = "v1"  # להעלות כדי להריץ שוב את הבדיקה העצמית
+SELFTEST = "v2"
+SELFTEST_CH = ("13",)  # 12 כבר עבר בבדיקה (19/11) - לא מעמיסים על מאקו  # להעלות כדי להריץ שוב את הבדיקה העצמית
 
 # יום: 0=שני ... 4=שישי 5=שבת 6=ראשון. החלון מתחיל בשעה h1 ביום שברשימה ונמשך עד h2 בבוקר שאחריו.
 SUN_THU, SAT = (6, 0, 1, 2, 3), (5,)
@@ -193,19 +194,51 @@ def latest13(query):
     return str(o["id"]), f"{names[i]} - {o.get('name', '')}", max(o.get("createDate") or 0, o.get("startDate") or 0), eid
 
 
+def kapi(params):
+    q = urllib.parse.urlencode(dict(params, format=1))
+    with urllib.request.urlopen("https://cdnapisec.kaltura.com/api_v3/?" + q, timeout=40) as r:
+        return json.loads(r.read().decode())
+
+
 def grab13(eid, out, secs=None):
-    """ישירות מ-Kaltura עם ffmpeg (בלי yt-dlp - חוסך זיכרון בשרת)."""
-    ref = base64.b64encode(b"https://13tv.co.il/").decode()
-    urls = [f"https://cdnapisec.kaltura.com/p/2748741/sp/274874100/playManifest/entryId/{eid}/format/applehttp/protocol/https/a.m3u8",
-            f"https://cdnapisec.kaltura.com/p/2748741/sp/274874100/playManifest/entryId/{eid}/format/applehttp/protocol/https/referrer/{ref}/a.m3u8"]
-    err = ""
+    """ישירות מ-Kaltura עם ffmpeg (בלי yt-dlp - חוסך זיכרון בשרת): מפתח ווידג'ט אנונימי -> רשימת האיכויות
+    -> הקובץ בגודל הקטן ביותר (בשביל הקו מספיק השמע) כהורדה ישירה."""
+    ref = urllib.parse.quote(base64.b64encode(b"https://13tv.co.il/").decode())
+    hd = {"Referer": "https://13tv.co.il/", "Origin": "https://13tv.co.il"}
+    base = f"https://cdnapisec.kaltura.com/p/2748741/sp/274874100/playManifest/entryId/{eid}"
+    urls, info = [], ""
+    try:
+        ks = kapi({"service": "session", "action": "startWidgetSession", "widgetId": "_2748741"}).get("ks", "")
+        fl = kapi({"service": "flavorAsset", "action": "getByEntryId", "entryId": eid, "ks": ks})
+        fl = [f for f in (fl if isinstance(fl, list) else []) if f.get("status") == 2 and f.get("id")]
+        fl.sort(key=lambda f: (f.get("isOriginal") is True, f.get("bitrate") or 0))
+        info = f"ks={'yes' if ks else 'no'} flavors={len(fl)} " + ",".join(
+            f"{f.get('id')}:{f.get('bitrate')}k/{f.get('height')}p/{f.get('fileExt')}" for f in fl[:6])
+        for f in fl[:2]:
+            ext = f.get("fileExt") or "mp4"
+            urls.append(f"{base}/flavorId/{f['id']}/format/url/protocol/https/ks/{ks}/a.{ext}?referrer={ref}")
+    except Exception as e:  # noqa: BLE001
+        info = "api: " + str(e)[:150]
+    urls += [f"{base}/format/applehttp/protocol/https/a.m3u8?referrer={ref}"]
+    errs = []
     for u in urls:
         try:
-            to_mp3(u, out, secs, {"Referer": "https://13tv.co.il/", "Origin": "https://13tv.co.il"})
+            to_mp3(u, out, secs, hd)
             return
         except Exception as e:  # noqa: BLE001
-            err = str(e)
-    raise RuntimeError(err)
+            errs.append(probe(u, hd) + " | " + str(e)[-160:])
+    raise RuntimeError(info + " || " + " || ".join(errs))
+
+
+def probe(url, headers):
+    """מה השרת מחזיר בכתובת (קוד, סוג, תחילת התוכן) - לאבחון."""
+    try:
+        r = subprocess.run(["curl", "-sSL", "-m", "30", "-A", UA, "-r", "0-300", "-o", "-", "-w", "\n%{http_code} %{content_type}"]
+                           + sum((["-H", f"{k}: {v}"] for k, v in headers.items()), []) + [url], capture_output=True)
+        body = r.stdout.decode("utf-8", "replace")
+        return re.sub(r"\s+", " ", body[-60:] + " :: " + body[:120])
+    except Exception as e:  # noqa: BLE001
+        return "probe " + str(e)[:80]
 
 
 # ---------- 12 ----------
@@ -297,13 +330,13 @@ def grab12(ep_url, out, secs=None):
 # ---------- הורדה והעלאה ----------
 def to_mp3(url, out, secs, headers):
     hd = "".join(f"{k}: {v}\r\n" for k, v in headers.items())
-    cmd = [ffmpeg(), "-y", "-loglevel", "error", "-user_agent", UA, "-headers", hd, "-i", url]
+    cmd = [ffmpeg(), "-y", "-loglevel", "warning", "-user_agent", UA, "-headers", hd, "-i", url]
     if secs:
         cmd += ["-t", str(secs)]
     cmd += ["-vn", "-ac", "1", "-ar", "16000", "-b:a", "24k", out]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=3 * 3600)
     if r.returncode or not os.path.exists(out) or os.path.getsize(out) < 20000:
-        raise RuntimeError("ffmpeg: " + (r.stderr or "")[-300:])
+        raise RuntimeError(f"ffmpeg rc={r.returncode}: " + (r.stderr or "")[-300:])
 
 
 def next_slot(folder, keep):
@@ -324,8 +357,8 @@ def upload(path, target):
 
 def selftest(st):
     """פעם אחת: 60 שניות מהפרק האחרון בכל ערוץ -> AgentCode/test_ed12 / test_ed13 (לבדיקה שהדרך עובדת)."""
-    for name, fn in (("13", lambda: latest13("המהדורה המרכזית")),
-                     ("12", lambda: latest12(JOBS[0][2], st))):
+    tests = {"13": lambda: latest13("המהדורה המרכזית"), "12": lambda: latest12(JOBS[0][2], st)}
+    for name, fn in [(k, tests[k]) for k in SELFTEST_CH]:
         try:
             ep = fn()
             if not ep:
