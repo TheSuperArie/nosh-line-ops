@@ -22,7 +22,7 @@ STATE = os.path.join(DIR, "editions_state.json")
 TMP = os.path.join(DIR, "editions_tmp.mp3")
 IL = ZoneInfo("Asia/Jerusalem")
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-SELFTEST = "v3"
+SELFTEST = "v4"
 SELFTEST_CH = ("13",)  # 12 כבר עבר בבדיקה (19/11) - לא מעמיסים על מאקו  # להעלות כדי להריץ שוב את הבדיקה העצמית
 
 # יום: 0=שני ... 4=שישי 5=שבת 6=ראשון. החלון מתחיל בשעה h1 ביום שברשימה ונמשך עד h2 בבוקר שאחריו.
@@ -220,9 +220,12 @@ def grab13(eid, out, secs=None):
             data_url = ""
         data_url = data_url or f"{base}/format/url/protocol/https"
         info += " | " + data_url[-70:]
-        for f in fl[:2]:
-            urls.append(f"{data_url}/flavorId/{f['id']}/ks/{ks}?referrer={ref}")
-            urls.append(f"{data_url}/flavorId/{f['id']}?referrer={ref}")
+        hls = data_url.replace("format/url", "format/applehttp")  # כמו yt-dlp: ה-HLS עם המפתח
+        for m3 in (f"{hls}/ks/{ks}?referrer={ref}", f"{hls}/ks/{ks}/a.m3u8?referrer={ref}"):
+            low = lowest_variant(m3, hd)
+            if low:
+                urls.append(low)
+            urls.append(m3)
     except Exception as e:  # noqa: BLE001
         info = "api: " + str(e)[:150]
     urls += [f"{base}/format/applehttp/protocol/https/a.m3u8?referrer={ref}"]
@@ -234,6 +237,25 @@ def grab13(eid, out, secs=None):
         except Exception as e:  # noqa: BLE001
             errs.append(re.sub(r"/ks/[^/?]+", "/ks/…", u)[-90:] + " -> " + probe(u, hd) + " | " + str(e)[-120:])
     raise RuntimeError(info + " || " + " || ".join(errs))
+
+
+def lowest_variant(master, headers):
+    """מרשימת האיכויות של HLS - הכתובת של האיכות הנמוכה (לקו צריך רק את השמע; חוסך הורדה)."""
+    try:
+        r = subprocess.run(["curl", "-sSL", "-m", "30", "-A", UA] + sum((["-H", f"{k}: {v}"] for k, v in headers.items()), [])
+                           + ["-w", "\n%{url_effective}", master], capture_output=True)
+        body, final = r.stdout.decode("utf-8", "replace").rsplit("\n", 1)
+        if "#EXTM3U" not in body:
+            return ""
+        best_bw, best_u, lines = None, "", body.splitlines()
+        for i, l in enumerate(lines):
+            m = re.search(r"BANDWIDTH=(\d+)", l)
+            if l.startswith("#EXT-X-STREAM-INF") and m and i + 1 < len(lines) and lines[i + 1].strip():
+                if best_bw is None or int(m.group(1)) < best_bw:
+                    best_bw, best_u = int(m.group(1)), urllib.parse.urljoin(final, lines[i + 1].strip())
+        return best_u
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def probe(url, headers):
