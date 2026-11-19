@@ -13,7 +13,8 @@ cand = [(h, t) for h, t in links.items() if all(w in t for w in q.split())] or \
        [(h, t) for h, t in links.items() if any(w in t for w in q.split() if len(w) > 2)]
 print("CAND", cand[:8])
 for h, t in cand[:2]:
-    url = h if h.startswith("http") else "https://103fm.maariv.co.il" + h
+    import urllib.parse
+    url = urllib.parse.quote(h if h.startswith("http") else "https://103fm.maariv.co.il" + h, safe=":/?=&.%")
     pid = re.search(r"programId=(\d+)", get(url))
     print("PROG", t, url, pid and pid.group(1))
     if pid:
