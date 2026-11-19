@@ -72,11 +72,27 @@ def clean(text):
     t = re.sub(r"\.{2,}", ".", re.sub(r"\s{2,}", " ", t)).strip(" .")
     return t[:700]
 
+MEDIA = os.environ.get("NEWS_MEDIA") == "1"  # להעלות גם סרטונים/הקלטות (את הקול שלהם) - כרגע רק בחתול השחור
+
+def media_url(m):
+    t = m.get("text") or ""
+    mm = re.search(r"\[(?:video|audio)-embedded#?[^\]]*\]\((https?://[^)\s#]+)", t)
+    if mm:
+        return mm.group(1)
+    mm = re.search(r"<(?:video|audio)[^>]*src=[\"'](https?://[^\"']+)", t)
+    if mm:
+        return mm.group(1)
+    f = m.get("file") or {}
+    if f.get("url") and re.match(r"(video|audio)", f.get("filetype") or ""):
+        return f["url"] if f["url"].startswith("http") else SITE + f["url"]
+    return None
+
 def to_item(m):
     if not isinstance(m, dict) or m.get("deleted") or m.get("is_ads") or m.get("is_advertisement"):
         return None
     txt = clean(m.get("text"))
-    if len(txt) < 15:
+    media = media_url(m) if MEDIA else None
+    if len(txt) < 15 and not media:
         return None
     try:
         ts = datetime.fromisoformat(re.sub(r"\.(\d{6})\d*", r".\1", m["timestamp"]).replace("Z", "+00:00")).astimezone(IL)
@@ -93,7 +109,10 @@ def to_item(m):
         epoch = ts.timestamp()
     except Exception:  # noqa
         epoch = time.time()
-    return {"id": m.get("id"), "say": (head + ": " if head else "") + txt + ".", "txt": txt, "ts": epoch, "ch": ch}
+    it = {"id": m.get("id"), "say": (head + ": " if head else "") + (txt + "." if len(txt) >= 3 else ""), "txt": txt, "ts": epoch, "ch": ch}
+    if media:
+        it["media"] = media
+    return it
 
 # ---------- סינון כפילויות: אותו מבזק מכמה כתבים/ערוצים ----------
 DUP_WINDOW = int(os.environ.get("NEWS_DUP_MIN", "60")) * 60      # דומה מאוד - בתוך שעה
@@ -209,8 +228,69 @@ def upload_audio(path, data):
     with urllib.request.urlopen(req, timeout=120) as r:
         return json.loads(r.read().decode("utf-8", "replace"))
 
+def ffmpeg():
+    """ffmpeg סטטי בתיקיית הסוכנים (אותו אחד של סוכן הרדיו)."""
+    import io, platform, stat, tarfile
+    ff = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", "ffmpeg")
+    if not os.path.exists(ff):
+        os.makedirs(os.path.dirname(ff), exist_ok=True)
+        arm = "aarch64" in platform.machine() or "arm" in platform.machine()
+        t = subprocess.run(["curl", "-sSL", "-m", "600", "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-"
+                            + ("arm64" if arm else "amd64") + "-static.tar.xz"], capture_output=True).stdout
+        with tarfile.open(fileobj=io.BytesIO(t), mode="r:xz") as tf:
+            mb = next(x for x in tf.getmembers() if x.name.endswith("/ffmpeg"))
+            open(ff, "wb").write(tf.extractfile(mb).read())
+        os.chmod(ff, os.stat(ff).st_mode | stat.S_IEXEC)
+    return ff
+
+def media_audio(url, say_mp3):
+    """מוריד סרטון/הקלטה, מוציא את הקול (עד 15 דקות), ומצרף אחרי ההקראה (אם יש). מחזיר mp3 או None."""
+    tmp = tempfile.gettempdir()
+    src = os.path.join(tmp, f"nosh_m_{uuid.uuid4().hex}")
+    out = src + ".mp3"
+    try:
+        r = subprocess.run(["curl", "-sSL", "-m", "300", "--max-filesize", "150000000", "-A", UA.get("User-Agent", "Mozilla/5.0"),
+                            "-o", src, url], capture_output=True)
+        if r.returncode or not os.path.exists(src) or os.path.getsize(src) < 2000:
+            log("media download failed", url[-60:], r.returncode)
+            return None
+        cmd = [ffmpeg(), "-y", "-loglevel", "error"]
+        if say_mp3:
+            sp = src + "_say.mp3"
+            open(sp, "wb").write(say_mp3)
+            cmd += ["-i", sp, "-i", src, "-filter_complex",
+                    "[0:a]aresample=16000,aformat=channel_layouts=mono[a];[1:a]aresample=16000,aformat=channel_layouts=mono,atrim=0:900[b];[a][b]concat=n=2:v=0:a=1[o]",
+                    "-map", "[o]"]
+        else:
+            cmd += ["-i", src, "-vn", "-t", "900"]
+        cmd += ["-ac", "1", "-ar", "16000", "-b:a", "32k", out]
+        c = subprocess.run(cmd, capture_output=True, timeout=900)
+        if c.returncode or not os.path.exists(out):
+            log("media ffmpeg failed", c.stderr.decode("utf-8", "replace")[-150:])
+            return None
+        return open(out, "rb").read()
+    except Exception as e:  # noqa
+        log("media error", str(e)[:120])
+        return None
+    finally:
+        for f in (src, src + "_say.mp3", out):
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+
 def put_item(i, it):
     """מעלה מבזק למקום i: שמע מוכן, ואם לא הצליח - טקסט להקראה של ימות."""
+    if it.get("media"):
+        say = render(it["say"]) if it["say"].strip() else None
+        data = media_audio(it["media"], say)
+        if data:
+            r = upload_audio(f"ivr2:{EXT}/{i:03d}.wav", data)
+            if r.get("responseStatus") == "OK":
+                ym("FileAction", action="delete", what=f"ivr2:{EXT}/{i:03d}.tts")
+                return "wav"
+        if len(it.get("txt") or "") < 15:
+            return "skip"  # סרטון בלי טקסט שלא הצליח - מדלגים
     data = render(it["say"])
     if data:
         r = upload_audio(f"ivr2:{EXT}/{i:03d}.wav", data)
@@ -241,6 +321,8 @@ def publish(st, new_items):
         files, nxt = [], 0
     for it in sorted(new_items, key=lambda x: x["id"] or 0):
         k = put_item(nxt, it)
+        if k == "skip":
+            continue
         if not k:
             st["files"], st["next"] = files, nxt + 1
             return False
@@ -277,6 +359,30 @@ def sync(reason=""):
         save(st)
         log(f"{len(new)} new flash(es) {'uploaded' if ok else 'FAILED'} ({reason}); skipped {len(dup)} duplicate(s); files {len(st.get('files') or [])}, next {st.get('next')}")
 
+def repair():
+    """מבזקים שעלו כטקסט (קול של ימות) בזמן תקלה בהקראה - מקליטים מחדש בקול הרגיל, עד 3 בכל דקה."""
+    if not shabbat_ok():
+        return
+    with lock:
+        st = load()
+        by_id = {it["id"]: it for it in st.get("items") or []}
+        fixed = 0
+        for f in st.get("files") or []:
+            if f.get("k") != "tts" or fixed >= 3:
+                continue
+            it = by_id.get(f.get("id"))
+            data = render(it["say"]) if it and it.get("say", "").strip() else None
+            if not data:
+                break  # ההקראה עדיין לא עובדת - ננסה בדקה הבאה
+            r = upload_audio(f"ivr2:{EXT}/{f['n']:03d}.wav", data)
+            if r.get("responseStatus") == "OK":
+                ym("FileAction", action="delete", what=f"ivr2:{EXT}/{f['n']:03d}.tts")
+                f["k"] = "wav"
+                fixed += 1
+        if fixed:
+            save(st)
+            log(f"re-voiced {fixed} flash(es) that had fallen back to ימות TTS")
+
 def listen():
     """זרם האירועים - מתעורר מיד כשיש הודעה חדשה."""
     while True:
@@ -309,6 +415,7 @@ if __name__ == "__main__":
     while True:
         try:
             sync("poll")
+            repair()
         except Exception as e:  # noqa
             log("poll error:", str(e)[:150])
         time.sleep(60)
