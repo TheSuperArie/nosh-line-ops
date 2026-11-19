@@ -22,7 +22,7 @@ STATE = os.path.join(DIR, "editions_state.json")
 TMP = os.path.join(DIR, "editions_tmp.mp3")
 IL = ZoneInfo("Asia/Jerusalem")
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-SELFTEST = "v2"
+SELFTEST = "v3"
 SELFTEST_CH = ("13",)  # 12 כבר עבר בבדיקה (19/11) - לא מעמיסים על מאקו  # להעלות כדי להריץ שוב את הבדיקה העצמית
 
 # יום: 0=שני ... 4=שישי 5=שבת 6=ראשון. החלון מתחיל בשעה h1 ביום שברשימה ונמשך עד h2 בבוקר שאחריו.
@@ -214,9 +214,15 @@ def grab13(eid, out, secs=None):
         fl.sort(key=lambda f: (f.get("isOriginal") is True, f.get("bitrate") or 0))
         info = f"ks={'yes' if ks else 'no'} flavors={len(fl)} " + ",".join(
             f"{f.get('id')}:{f.get('bitrate')}k/{f.get('height')}p/{f.get('fileExt')}" for f in fl[:6])
+        try:  # הכתובת כמו ש-yt-dlp בונה: dataUrl של הפרק + /flavorId/<id> + /ks/<ks> + ?referrer=
+            data_url = kapi({"service": "baseEntry", "action": "get", "entryId": eid, "ks": ks}).get("dataUrl") or ""
+        except Exception:  # noqa: BLE001
+            data_url = ""
+        data_url = data_url or f"{base}/format/url/protocol/https"
+        info += " | " + data_url[-70:]
         for f in fl[:2]:
-            ext = f.get("fileExt") or "mp4"
-            urls.append(f"{base}/flavorId/{f['id']}/format/url/protocol/https/ks/{ks}/a.{ext}?referrer={ref}")
+            urls.append(f"{data_url}/flavorId/{f['id']}/ks/{ks}?referrer={ref}")
+            urls.append(f"{data_url}/flavorId/{f['id']}?referrer={ref}")
     except Exception as e:  # noqa: BLE001
         info = "api: " + str(e)[:150]
     urls += [f"{base}/format/applehttp/protocol/https/a.m3u8?referrer={ref}"]
@@ -226,7 +232,7 @@ def grab13(eid, out, secs=None):
             to_mp3(u, out, secs, hd)
             return
         except Exception as e:  # noqa: BLE001
-            errs.append(probe(u, hd) + " | " + str(e)[-160:])
+            errs.append(re.sub(r"/ks/[^/?]+", "/ks/…", u)[-90:] + " -> " + probe(u, hd) + " | " + str(e)[-120:])
     raise RuntimeError(info + " || " + " || ".join(errs))
 
 
@@ -370,7 +376,7 @@ def selftest(st):
             upload(TMP, f"ivr2:/AgentCode/test_ed{name}")
             log(f"TEST {name}: OK - 60 שניות ({os.path.getsize(TMP) // 1024}KB, {time.time() - t0:.0f} שנ') -> AgentCode/test_ed{name}.wav")
         except Exception as e:  # noqa: BLE001
-            log(f"TEST {name}: FAILED {str(e)[:250]}")
+            log(f"TEST {name}: FAILED {str(e)[:900]}")
         finally:
             if os.path.exists(TMP):
                 os.remove(TMP)
