@@ -19,7 +19,7 @@ for h, t in cand[:2]:
     print("PROG", t, url, pid and pid.group(1))
     if pid:
         x = get(f"https://103fm.maariv.co.il/rss/mediarss.aspx?programId={pid.group(1)}")
-        for it in re.findall(r"<item>(.*?)</item>", x, re.S)[:14]:
+        for it in re.findall(r"<item>(.*?)</item>", x, re.S)[:80]:
             ti = re.search(r"<title>(.*?)</title>", it, re.S)
             pd = re.search(r"<pubDate>(.*?)</pubDate>", it)
-            print("ITEM", html.unescape(re.sub(r"^<!\[CDATA\[|\]\]>$", "", ti.group(1).strip())) if ti else "", "|", pd and pd.group(1))
+            if "המלאה" in it: print("ITEM", html.unescape(re.sub(r"^<!\[CDATA\[|\]\]>$", "", ti.group(1).strip())) if ti else "", "|", pd and pd.group(1))
