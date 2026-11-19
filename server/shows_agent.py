@@ -218,21 +218,40 @@ def cycle(st):
                     status(st, f"הפטריוטים {vid} - שגיאה בהפעלה: {str(e)[:100]}")
                     st["seen"][name] = [i for i in st["seen"][name] if i != vid]  # ננסה שוב בסבב הבא
         elif new and job.startswith("YT:"):
-            cfg = YTLINE[job[3:]]
-            for vid in new[:2]:
-                payload = {k: str(v) for k, v in cfg.items() if k in ("folder", "keep", "done", "label")}
-                payload["vid"] = vid
-                try:
-                    code = dispatch([], repo="TheSuperArie/nosh-line-ops", event="ytline", payload=payload)
-                    status(st, f"{cfg['name']} חדש {vid} - הופעל ב-nosh-line-ops ({code})")
-                except Exception as e:  # noqa: BLE001
-                    status(st, f"{cfg['name']} {vid} - שגיאה בהפעלה: {str(e)[:100]}")
-                    st["seen"][name] = [i for i in st["seen"][name] if i != vid]
+            for vid in new[:2]:  # נכנס לרשימת ההמתנה; ההפעלה (וניסיונות חוזרים) למטה
+                st.setdefault("ytq", {})[vid] = {"k": job[3:], "t": 0, "n": 0}
         elif new:
             log("NEW", name, new[:3])
             if job not in st["pending"]:
                 st["pending"].append(job)
             status(st, f"חדש ב-{name}: {new[0][:60]}")
+    # 1ב. סדרות מיוטיוב: מפעילים, ואם עד הבדיקה הבאה (כל 3 שעות) הסרטון לא ברשימת "בוצע" - שוב (עד 8 פעמים)
+    for vid, q in list(st.get("ytq", {}).items()):
+        cfg = YTLINE.get(q["k"])
+        if not cfg or q["n"] >= 8:
+            st["ytq"].pop(vid, None)
+            if cfg:
+                status(st, f"{cfg['name']} {vid} - נכשל 8 פעמים, ויתרתי")
+            continue
+        if time.time() - q["t"] < 3 * 3600:
+            continue
+        if q["n"]:
+            try:
+                q2 = urllib.parse.urlencode({"token": KEY, "path": cfg["done"]})
+                if vid in urllib.request.urlopen(API + "DownloadFile?" + q2, timeout=60).read().decode("utf-8", "replace"):
+                    st["ytq"].pop(vid, None)
+                    continue
+            except Exception:  # noqa: BLE001
+                pass
+        payload = {k: str(v) for k, v in cfg.items() if k in ("folder", "keep", "done", "label")}
+        payload["vid"] = vid
+        q["t"], q["n"] = time.time(), q["n"] + 1
+        try:
+            code = dispatch([], repo="TheSuperArie/nosh-line-ops", event="ytline", payload=payload)
+            status(st, f"{cfg['name']} {vid} - הופעל ב-nosh-line-ops (ניסיון {q['n']}, {code})")
+        except Exception as e:  # noqa: BLE001
+            status(st, f"{cfg['name']} {vid} - שגיאה בהפעלה: {str(e)[:100]}")
+            q["t"] = time.time() - 3 * 3600 + 300
     # 2. שעות קבועות (חלון של 20 דקות אחרי השעה)
     for days, hm, jobs in SCHEDULE:
         h, m = map(int, hm.split(":"))
