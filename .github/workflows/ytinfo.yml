@@ -1,34 +1,34 @@
 name: ytinfo
-# אבחון: פרטי פלייליסט/ערוץ ביוטיוב. client_payload.pl = מזהה פלייליסט, client_payload.vids = מזהי סרטונים (רווח)
+# אבחון: אילו לקוחות של yt-dlp מצליחים להוריד סרטון (עם/בלי עוגיות, PO token). client_payload.vids
 on:
   repository_dispatch:
     types: [ytinfo]
 jobs:
   i:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
       - uses: denoland/setup-deno@v2
         with: {deno-version: v2.x}
       - run: |
-          pip install -q -U "yt-dlp[default]"
-          python3 tools/fix_cookies.py >/dev/null 2>&1 && cp cookies.txt /tmp/c.txt || true
-          CH=$(yt-dlp --flat-playlist -I 1 --print "%(playlist_channel_id)s|%(playlist_channel)s" "https://www.youtube.com/playlist?list=$PL" 2>/dev/null | head -1)
-          echo "=== CHANNEL $CH"
-          CID=${CH%%|*}
-          curl -sS -m 30 "https://www.youtube.com/feeds/videos.xml?channel_id=$CID" | python3 -c '
-          import re,sys
-          x=sys.stdin.read()
-          for e in re.findall(r"<entry>(.*?)</entry>",x,re.S):
-              g=lambda p:(re.search(p,e).group(1) if re.search(p,e) else "")
-              print(g(r"<published>([^<]+)"), g(r"<yt:videoId>([^<]+)"), g(r"<title>([^<]+)"))
-          '
-          echo "=== PLAYLISTS"
-          yt-dlp --flat-playlist --print "%(id)s|%(title)s" "https://www.youtube.com/channel/$CID/playlists" 2>&1 | head -40
-          echo "=== VIDS"
-          for v in $VIDS; do yt-dlp --cookies /tmp/c.txt --skip-download --print "%(id)s|%(timestamp)s|%(upload_date)s|%(release_timestamp)s|%(title)s" "https://www.youtube.com/watch?v=$v" 2>&1 | tail -1; done
+          pip install -q -U --pre "yt-dlp[default]" bgutil-ytdlp-pot-provider
+          docker run -d --name bgutil -p 4416:4416 --init brainicism/bgutil-ytdlp-pot-provider > /dev/null
+          for i in $(seq 1 30); do curl -s localhost:4416/ping > /dev/null && break; sleep 1; done
+          python3 tools/fix_cookies.py && cp cookies.txt /tmp/c.txt
+          yt-dlp --version
+          for v in $VIDS; do
+            for cl in default web_embedded tv_simply tv android_vr ios web_safari mweb web_creator; do
+              for ck in yes no; do
+                A=""; [ "$cl" != default ] && A="--extractor-args youtube:player_client=$cl"
+                C=""; [ $ck = yes ] && C="--cookies /tmp/c.txt"
+                out=$(timeout 90 yt-dlp $A $C -f bestaudio/best --skip-download --print "%(format_id)s %(ext)s %(filesize_approx)s" "https://www.youtube.com/watch?v=$v" 2>&1 | tail -1)
+                echo "RES $v $cl cookies=$ck :: ${out:0:160}"
+              done
+            done
+          done
         env:
-          PL: ${{ github.event.client_payload.pl }}
           VIDS: ${{ github.event.client_payload.vids }}
           YT_COOKIES: ${{ secrets.YT_COOKIES }}
