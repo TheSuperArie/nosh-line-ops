@@ -11,3 +11,4 @@ timing_agent
 stats_agent
 alon_agent
 news_blackcat_agent
+editions_agent

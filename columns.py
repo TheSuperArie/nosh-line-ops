@@ -790,6 +790,12 @@ def main() -> None:
     step = os.environ.get("STEP", "scan")
     arg = os.environ.get("ARG", "")
     os.makedirs("out", exist_ok=True)
+    if step == "check":  # רק בודק אילו ערכים חסרים ב-secrets (בלי להדפיס אותם)
+        have = {"user": GMAIL_USER, "link": SECRET, "click": CLICK_URL, "GMAIL_APP_PASSWORD": GMAIL_PASS,
+                "TS_OAUTH_CLIENT_ID": os.environ.get("TS_ID", "")}
+        for n, v in have.items():
+            print(f"::notice title=CHECK {n}::{'יש' if v else 'חסר'}", flush=True)
+        return
     if step != "probe" and not arg.startswith("dry"):
         miss = [n for n, v in (("user", GMAIL_USER), ("GMAIL_APP_PASSWORD", GMAIL_PASS), ("link", SECRET), ("click", CLICK_URL)) if not v]
         if miss:
