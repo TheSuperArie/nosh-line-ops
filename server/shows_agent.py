@@ -119,11 +119,18 @@ YTLINE = {
     "rosen": {"ch": "UCPjRHyDm5ngHYHNBn1LMc3g", "match": "רוזנבלום", "folder": "/8/2/1", "keep": 2,
               "done": "ivr2:/AgentCode/rosen_done.json", "label": "ROSENBLUM", "name": "הרב רוזנבלום",
               "plf": "רוזנבלום", "intro": "parasha"},  # רק מהפלייליסטים "הרב רוזנבלום - חומש ..."; לפני כל דרשה "פרשת ..."
+    # פודקאסט לנחמיה -> 8/9/2 (נסתר). לא קבוע - בודקים את הפלייליסט פעם ביום בחצות; נמחק אחרי 30 יום (cleanup_agent)
+    "nehemia": {"pl": "PLpbtu_tNqwm5f3A1xKtqnjF-qJCdwHXrd", "match": "", "folder": "/8/9/2", "keep": 30,
+                "done": "ivr2:/AgentCode/nehemia_done.json", "label": "PODCAST892", "name": "פודקאסט 8/9/2",
+                "hours": (0, 1), "daily": True},
 }
 
 
 def yt_channel(cfg):
-    x = get(f"https://www.youtube.com/feeds/videos.xml?channel_id={cfg['ch']}")
+    if cfg.get("pl"):
+        x = get(f"https://www.youtube.com/feeds/videos.xml?playlist_id={cfg['pl']}")
+    else:
+        x = get(f"https://www.youtube.com/feeds/videos.xml?channel_id={cfg['ch']}")
     if "<entry>" not in x:
         raise RuntimeError("yt rss: " + x[:120])
     out = []
@@ -131,7 +138,7 @@ def yt_channel(cfg):
         m = re.search(r"<title>(.*?)</title>", e)
         t = html.unescape(m.group(1)) if m else ""
         vid = re.search(r"<yt:videoId>([^<]+)", e)
-        if vid and all(w in t for w in cfg["match"].split("|")):
+        if vid and all(w in t for w in cfg["match"].split("|") if w):
             out.append(vid.group(1))
     return out
 
@@ -164,7 +171,7 @@ def gly():
 
 WATCH = [  # (שם, פונקציה, משימה, שעות פעילות בשעון ישראל) - הרדיו עבר ל-radio_agent
     ("c14", c14, "PAT_OPS", (19, 9)),   # הפטריוטים: מופעל במאגר הציבורי nosh-line-ops (בלי עלות דקות)
-] + [(k, (lambda c=c: yt_channel(c)), "YT:" + k, (0, 24)) for k, c in YTLINE.items()]
+] + [(k, (lambda c=c: yt_channel(c)), "YT:" + k, c.get("hours", (0, 24))) for k, c in YTLINE.items()]
 
 
 def active(hours, now):
@@ -198,13 +205,19 @@ def cycle(st):
     now = datetime.now(IL)
     # 1. בדיקת מקורות
     for name, fn, job, hours in WATCH:
-        if not active(hours, now):
+        first = name not in st["seen"]  # מבט ראשון (רק זוכרים מה קיים) - מיד, בלי לחכות לשעה
+        if not first and not active(hours, now):
             continue
+        daily = job.startswith("YT:") and YTLINE.get(job[3:], {}).get("daily")
+        if daily and not first and st.setdefault("daily", {}).get(name) == str(now.date()):
+            continue  # כבר נבדק היום
         try:
             ids = fn()
         except Exception as e:  # noqa: BLE001
             log("check failed", name, str(e)[:150])
             continue
+        if daily:
+            st.setdefault("daily", {})[name] = str(now.date())
         old = st["seen"].get(name)
         new = [i for i in ids if old is not None and i not in old]
         st["seen"][name] = list(dict.fromkeys((old or []) + ids))[-60:]

@@ -36,3 +36,5 @@ jobs:
           LABEL: ${{ github.event.client_payload.label }}
           INTRO: ${{ github.event.client_payload.intro }}
           PLF: ${{ github.event.client_payload.plf }}
+          PL: ${{ github.event.client_payload.pl }}
+          LAST: ${{ github.event.client_payload.last }}

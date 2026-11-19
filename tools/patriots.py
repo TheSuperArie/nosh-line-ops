@@ -29,6 +29,19 @@ def done_list():
 
 
 vid = (os.environ.get("VID") or "").strip()
+PL = (os.environ.get("PL") or "").strip()
+if "," in vid or (not vid and PL):  # כמה סרטונים (או N אחרונים מפלייליסט, LAST) - כל אחד בריצה נפרדת, מהישן לחדש
+    vids = [v for v in vid.split(",") if v]
+    if not vids:
+        x = urllib.request.urlopen(f"https://www.youtube.com/feeds/videos.xml?playlist_id={PL}", timeout=30).read().decode()
+        ents = [(re.search(r"<published>([^<]+)", e).group(1), re.search(r"<yt:videoId>([^<]+)", e).group(1))
+                for e in re.findall(r"<entry>(.*?)</entry>", x, re.S)]
+        vids = [v for _, v in sorted(ents)[-int(os.environ.get("LAST") or 1):]]
+    print(f"::notice title={LABEL} batch::{vids}")
+    bad = 0
+    for v in vids:
+        bad += subprocess.run([sys.executable, __file__], env={**os.environ, "VID": v, "PL": ""}).returncode != 0
+    sys.exit(1 if bad else 0)
 if not vid:  # בלי מזהה - הסרטון האחרון מהערוץ שמתאים למילים
     x = urllib.request.urlopen(f"https://www.youtube.com/feeds/videos.xml?channel_id={CH}", timeout=30).read().decode()
     for e in re.findall(r"<entry>(.*?)</entry>", x, re.S):

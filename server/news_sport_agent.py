@@ -4,7 +4,7 @@
 import html, os, re, subprocess, sys, time
 from datetime import datetime
 D = os.path.dirname(os.path.abspath(__file__))
-os.environ.update(NEWS_EXT="/8/9", NEWS_SAY_CH="0", NEWS_KEEP="30", NEWS_STATE=os.path.join(D, "news_sport_state.json"))
+os.environ.update(NEWS_EXT="/8/9/1", NEWS_SAY_CH="0", NEWS_KEEP="30", NEWS_STATE=os.path.join(D, "news_sport_state.json"))
 sys.path.insert(0, D)
 import news_agent as n  # noqa: E402
 
