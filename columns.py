@@ -4,7 +4,7 @@
           ARG=test - בדיקה: חלון של 6 ימים אחורה ושליחה מיד.
   build - אחרי "שלח" בדף הבחירה (Make): V = "week|i0,i3,...|A5|A4", S = חתימה.
   probe - בדיקת אתרים (ARG = כתובות מופרדות ב-;;)."""
-import os, re, sys, json, html, time, hmac, hashlib, base64, smtplib
+import os, re, sys, json, html, time, hmac, hashlib, base64, smtplib, difflib
 from datetime import datetime, timedelta, date
 from email.message import EmailMessage
 from urllib.parse import urljoin, quote
@@ -35,8 +35,6 @@ WRITERS = [
     ("עמית סגל", "ישראל היום", [("ih", "עמית-סגל")]),
     ("יואב לימור", "ישראל היום", [("ih", "יואב-לימור")]),
     ("מתי טוכפלד", "מעריב", [("maariv", "mati-tuchfeld-59682"), ("ih", "מתי-טוכפלד")]),
-    ("אריאל כהנא", "JNS", [("page", ("https://www.jns.org/he/author/ariel-kahana", r'href="(https://www\.jns\.org\.il/(?!tag/|section/|author/)[^"#?]{25,})"')),
-                          ("ih", "אריאל-כהנא")]),
     ("קלמן ליבסקינד", "מקור ראשון", [("mr", "76497")]),
     ("חגי סגל", "מקור ראשון", [("mr", "72478")]),
     ("בן כספית", "מעריב", [("maariv", "ben-caspit-3775")]),
@@ -157,6 +155,8 @@ def meta(page: str, name: str) -> str:
 
 JUNK = re.compile(r"(להצטרפות|הצטרפו ל|לקבוצת ה|מצאתם טעות|טעינו\? נתקן|לכל הטורים|קראו עוד|הורידו את האפליקציה|"
                   r"תגובות לכתבה|לחצו כאן|עקבו אחרינו|ניוזלטר|כל הזכויות שמורות|^צילום:|^\(צילום)")
+# תוויות של האתר שנשארו כפסקה קצרה לבד (20/11: נמצאו בקובץ של 13/11)
+LABEL = re.compile(r"^(הכי מעניין|עוד כתבות בנושא|כתבות נוספות(?: בנושא)?|אולי יעניין אתכם|מומלצים|הכי נקראים|לתגובות|תגובות)\s*:?\s*\S{0,60}$")
 
 
 def body_paragraphs(page: str, ld: dict) -> list:
@@ -164,7 +164,7 @@ def body_paragraphs(page: str, ld: dict) -> list:
     try:
         import trafilatura
         t = trafilatura.extract(page, include_comments=False, include_tables=False, include_images=False,
-                                favor_precision=True, deduplicate=True) or ""
+                                favor_precision=True, deduplicate=False) or ""
         paras = [p.strip() for p in t.split("\n") if p.strip()]
     except Exception as e:  # noqa: BLE001
         print("trafilatura:", e)
@@ -176,7 +176,7 @@ def body_paragraphs(page: str, ld: dict) -> list:
                 ab = json.loads('"' + m.group(1) + '"')
             except Exception:  # noqa: BLE001
                 ab = ""
-    if ab and len(ab) > 1.2 * sum(len(p) for p in paras):
+    if ab and len(re.sub(r"<[^>]+>", "", ab)) > 1.03 * sum(len(p) for p in paras):  # גם פסקה אחת שחסרה
         ab = html.unescape(re.sub(r"<[^>]+>", "\n", ab)).strip()
         if "\n" in ab:
             paras = [p.strip() for p in re.split(r"\n+", ab) if p.strip()]
@@ -200,9 +200,12 @@ def body_paragraphs(page: str, ld: dict) -> list:
     clean = []
     for p in paras:
         p = re.sub(r"\s+", " ", p).strip()
-        if len(p) < 2 or JUNK.search(p):
+        if len(p) < 2 or JUNK.search(p) or (len(p) < 80 and LABEL.match(p)):
             continue
-        if clean and p == clean[-1]:
+        # כפילות (פוסט מוטמע + אותו ציטוט בגוף, ציטוט מודגש שחוזר): משאירים רק את הראשון
+        n = re.sub(r"\W+", "", p)
+        if any(n == re.sub(r"\W+", "", q) or (len(n) > 60 and (n in re.sub(r"\W+", "", q) or
+               difflib.SequenceMatcher(None, n, re.sub(r"\W+", "", q)).ratio() > 0.9)) for q in clean[-12:]):
             continue
         clean.append(p)
     return clean
