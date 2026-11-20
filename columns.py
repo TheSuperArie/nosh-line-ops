@@ -778,6 +778,20 @@ def probe(arg: str) -> None:
         rx = ""
         if "~~" in url:
             url, rx = url.split("~~", 1)
+        if url.startswith("FULL:"):  # אבחון: כל הפסקאות שיצאו מול מבנה ה-HTML של הדף
+            st, page = fetch(url[5:], il=il)
+            ld = ld_article(page)
+            ab = ld.get("articleBody") or ""
+            print(f"\n===== FULL {url[5:]} st={st} articleBody={len(ab)} nl={ab.count(chr(10))}")
+            for i, p_ in enumerate(body_paragraphs(page, ld)):
+                print(f"  P{i:02d} [{len(p_)}] {p_[:160]}")
+            m = re.search(r"<article.*?</article>", page, re.S) or re.search(r"<body.*", page, re.S)
+            blk = m.group(0) if m else page
+            for t, inner in re.findall(r"<(h[1-6]|p|blockquote|strong|b)\b[^>]*>(.*?)</\1>", blk, re.S)[:400]:
+                txt = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", inner))).strip()
+                if len(txt) > 3:
+                    print(f"  H<{t}> {txt[:140]}")
+            continue
         if url.startswith("ART:"):
             a = get_article(url[4:], il=il)
             a.pop("page_has", None)
