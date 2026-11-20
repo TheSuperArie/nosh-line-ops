@@ -23,6 +23,9 @@ GMAIL_USER = os.environ.get("GMAIL_USER") or _CFG.get("user", "")
 GMAIL_PASS = (os.environ.get("GMAIL_APP_PASSWORD") or _CFG.get("pass", "")).replace(" ", "").strip()
 SECRET = os.environ.get("LINK_SECRET") or _CFG.get("link", "")
 CLICK_URL = os.environ.get("MAKE_CLICK_URL") or _CFG.get("click", "")
+# נמענים נוספים (כל אחד מקבל מייל בחירה משלו וקובץ משלו). secret COLUMNS_ALSO = כתובות מופרדות בפסיק/שורה
+_ALSO = (os.environ.get("COLUMNS_ALSO", "") + "," + _CFG.get("also", "")).replace("\n", ",").replace(";", ",")
+RECIPIENTS = [GMAIL_USER] + [a.strip() for a in _ALSO.split(",") if "@" in a and a.strip().lower() != GMAIL_USER.lower()]
 _il_ok = None
 
 # ---------- הכותבים ----------
@@ -438,10 +441,10 @@ def sign(vid: str, kind: str) -> str:
 
 
 # ---------- מייל ----------
-def send_mail(subject: str, body_html: str, attachment: str | None = None) -> None:
+def send_mail(subject: str, body_html: str, attachment: str | None = None, to: str | None = None) -> None:
     msg = EmailMessage()
     msg["From"] = f"טורי סוף השבוע <{GMAIL_USER}>"
-    msg["To"] = GMAIL_USER
+    msg["To"] = to or GMAIL_USER
     msg["Subject"] = subject
     msg.set_content("המייל הזה מוצג כ-HTML.")
     msg.add_alternative(f'<div dir="rtl" style="font-family:Arial,sans-serif;font-size:15px;line-height:1.6">{body_html}</div>',
@@ -452,12 +455,23 @@ def send_mail(subject: str, body_html: str, attachment: str | None = None) -> No
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
         s.login(GMAIL_USER, GMAIL_PASS)
         s.send_message(msg)
-    print("mail sent:", subject, flush=True)
+    print("mail sent:", subject, "| to #", RECIPIENTS.index(to) if to in RECIPIENTS else 0, flush=True)
 
 
 def selection_mail(week: str, wk: dict) -> None:
+    for r, to in enumerate(RECIPIENTS):  # לכל נמען קישור משלו; המספר שלו חתום בתוך w (בלי שינוי ב-Make)
+        try:
+            _selection_mail(f"{week}~{r}" if r else week, wk, to)
+        except Exception as e:  # noqa: BLE001  נמען נוסף שנכשל לא יעצור את השאר
+            print(f"::warning title=selection mail #{r}::{type(e).__name__}: {e}", flush=True)
+            if r == 0:
+                raise
+
+
+def _selection_mail(w: str, wk: dict, to: str) -> None:
+    week = w.split("~")[0]
     items = sorted(wk["items"], key=lambda it: (PAPER_ORDER.index(it["paper"]) if it["paper"] in PAPER_ORDER else 99))
-    payload = {"w": week, "s": sign(week, "cols"), "t": wk.get("title", ""),
+    payload = {"w": w, "s": sign(w, "cols"), "t": wk.get("title", ""),
                "it": [[it["id"], it["writer"], it["paper"], it.get("title", ""), it["status"], 1 if it.get("default") else 0]
                       for it in items]}
     d = base64.urlsafe_b64encode(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()).decode().rstrip("=")
@@ -484,7 +498,7 @@ def selection_mail(week: str, wk: dict) -> None:
             + (f'<p style="color:#8a7a62;font-size:13px">לא עלו השבוע (או בתשלום): {html.escape(", ".join(wk.get("missing", [])))}</p>'
                if wk.get("missing") else "")
             + '<p style="color:#8a7a62;font-size:13px">(בתוך מייל אי אפשר לסמן תיבות - לכן הבחירה נפתחת בדף קטן.)</p>')
-    send_mail(f"📰 טורי סוף השבוע {wk.get('title', '')} - לבחירה", body)
+    send_mail(f"📰 טורי סוף השבוע {wk.get('title', '')} - לבחירה", body, to=to)
 
 
 # ---------- סריקה ----------
@@ -671,11 +685,16 @@ def do_build() -> None:
         v = os.environ.get("TESTV", "")
     sig = b64(os.environ.get("S_B64", ""))
     parts = v.split("|")
-    week, ids, fmt = parts[0], [i for i in (parts[1] if len(parts) > 1 else "").split(",") if i], (parts[2] if len(parts) > 2 else "A5")
+    w, ids, fmt = parts[0], [i for i in (parts[1] if len(parts) > 1 else "").split(",") if i], (parts[2] if len(parts) > 2 else "A5")
     fmt = "A4" if fmt.upper() == "A4" else "A5"
     trusted = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
-    if not trusted and not hmac.compare_digest(sig, sign(week, "cols")):
+    if not trusted and not hmac.compare_digest(sig, sign(w, "cols")):
         sys.exit("bad signature")
+    week, _, r = w.partition("~")
+    r = int(r) if r.isdigit() else 0
+    if r >= len(RECIPIENTS):
+        sys.exit(f"no recipient #{r}")
+    to = RECIPIENTS[r]
     state = load_state()
     wk = state.get("weeks", {}).get(week)
     if not wk:
@@ -699,7 +718,7 @@ def do_build() -> None:
         a["title"] = a.get("title") or it.get("title", "")
         arts.append(a)
     if not arts:
-        send_mail("📰 טורי סוף השבוע - לא נמצאו טורים", "<p>לא הצלחתי להוריד אף אחד מהטורים שסימנת.</p>")
+        send_mail("📰 טורי סוף השבוע - לא נמצאו טורים", "<p>לא הצלחתי להוריד אף אחד מהטורים שסימנת.</p>", to=to)
         return
     order = {p: i for i, p in enumerate(PAPER_ORDER)}
     arts.sort(key=lambda a: (order.get(a["paper"], 99), [w[0] for w in WRITERS].index(a["writer"]) if a["writer"] in [w[0] for w in WRITERS] else 99))
@@ -739,8 +758,8 @@ def do_build() -> None:
         print("::notice title=BUILD::" + final, flush=True)
         return
     send_mail(f"📰 {name}", f"<h3 style='margin:0'>טורי סוף השבוע {esc(title)}</h3>{how}<ol>{lst}</ol>{skip}"
-                            "<p>שבת שלום!</p>", final)
-    wk.setdefault("built", []).append({"at": datetime.now(IL_TZ).isoformat()[:16], "fmt": fmt, "n": len(arts)})
+                            "<p>שבת שלום!</p>", final, to=to)
+    wk.setdefault("built", []).append({"at": datetime.now(IL_TZ).isoformat()[:16], "fmt": fmt, "n": len(arts), "r": r})
     save_state(state)
 
 
@@ -792,7 +811,7 @@ def main() -> None:
     os.makedirs("out", exist_ok=True)
     if step == "check":  # רק בודק אילו ערכים חסרים ב-secrets (בלי להדפיס אותם)
         have = {"user": GMAIL_USER, "link": SECRET, "click": CLICK_URL, "GMAIL_APP_PASSWORD": GMAIL_PASS,
-                "TS_OAUTH_CLIENT_ID": os.environ.get("TS_ID", "")}
+                "TS_OAUTH_CLIENT_ID": os.environ.get("TS_ID", ""), "COLUMNS_ALSO": ",".join(RECIPIENTS[1:])}
         for n, v in have.items():
             print(f"::notice title=CHECK {n}::{'יש' if v else 'חסר'}", flush=True)
         return
