@@ -159,6 +159,36 @@ JUNK = re.compile(r"(להצטרפות|הצטרפו ל|לקבוצת ה|מצאתם
 LABEL = re.compile(r"^(הכי מעניין|עוד כתבות בנושא|כתבות נוספות(?: בנושא)?|אולי יעניין אתכם|מומלצים|הכי נקראים|לתגובות|תגובות)\s*:?\s*\S{0,60}$")
 
 
+def _norm(x: str) -> str:
+    return re.sub(r"\W+", "", x)
+
+
+def html_sequence(page: str, ref: str) -> list:
+    """פסקאות + כותרות ביניים לפי סדר ה-HTML בתוך <article> (מעריב: הפסקה הראשונה וכותרות הביניים חסרות ב-articleBody).
+    מוחזר רק אם רוב הפסקאות נמצאות גם בטקסט הייחוס (articleBody / trafilatura) - אחרת [] (לא נוגעים)."""
+    m = re.search(r"<article\b.*?</article>", page, re.S)
+    if not m:
+        return []
+    seq, started = [], False
+    for tag, inner in re.findall(r"<(h[2-4]|p)\b[^>]*>(.*?)</\1>", m.group(0), re.S):
+        t = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", inner))).strip()
+        if not t:
+            continue
+        if tag == "p" and len(t) > 25:
+            seq.append(t)
+            started = True
+        elif tag in ("h3", "h4") and started and len(t) < 120:
+            seq.append("§§" + t)
+    ps = [x for x in seq if not x.startswith("§§")]
+    rn = _norm(ref)
+    hit = sum(1 for x in ps if _norm(x)[:40] in rn)
+    if len(ps) >= 4 and hit >= 0.7 * len(ps) and sum(len(x) for x in ps) >= 0.8 * len(ref):
+        while seq and seq[-1].startswith("§§"):
+            seq.pop()
+        return seq
+    return []
+
+
 def body_paragraphs(page: str, ld: dict) -> list:
     paras = []
     try:
@@ -197,13 +227,24 @@ def body_paragraphs(page: str, ld: dict) -> list:
                         cur = ""
                 if cur:
                     paras.append(cur)
+    seq = html_sequence(page, re.sub(r"<[^>]+>", " ", ab) if ab else " ".join(paras))
+    if seq:
+        paras = seq
     clean = []
     for p in paras:
         p = re.sub(r"\s+", " ", p).strip()
+        if p.startswith("§§"):  # כותרת ביניים
+            if not JUNK.search(p) and not LABEL.match(p[2:]):
+                clean.append(p)
+            continue
         if len(p) < 2 or JUNK.search(p) or (len(p) < 80 and LABEL.match(p)):
             continue
         # כפילות (פוסט מוטמע + אותו ציטוט בגוף, ציטוט מודגש שחוזר): משאירים רק את הראשון
+        sents = re.split(r"(?<=[.!?])\s+", p)  # משפט שחוזר פעמיים ברצף בתוך פסקה
+        p = " ".join(x for i, x in enumerate(sents) if i == 0 or len(x) < 25 or x != sents[i - 1])
         n = re.sub(r"\W+", "", p)
+        # ציטוט מודגש שהופיע לפני הפסקה המלאה: מוחקים את הציטוט ומשאירים את הפסקה
+        clean = clean[:-12] + [q for q in clean[-12:] if q.startswith("§§") or not (30 < len(_norm(q)) < len(n) and _norm(q) in n)]
         if any(n == re.sub(r"\W+", "", q) or (len(n) > 60 and (n in re.sub(r"\W+", "", q) or
                difflib.SequenceMatcher(None, n, re.sub(r"\W+", "", q)).ratio() > 0.9)) for q in clean[-12:]):
             continue
@@ -230,6 +271,9 @@ def get_article(url: str, il: bool = False) -> dict:
         if first == re.sub(r"[\s\[\]\.…]+", " ", sub).strip():
             paras = paras[1:]
         elif key and first.startswith(key):  # התקציר הוא רק תחילת הטור - לא מציגים אותו פעמיים
+            sub = ""
+        elif re.sub(r"\W+", "", re.sub(r"(\[\s*(\.\.\.|…)\s*\]|\.\.\.|…)\s*$", "", sub))[:40] and re.sub(r"\W+", "", paras[0]).startswith(
+                re.sub(r"\W+", "", re.sub(r"(\[\s*(\.\.\.|…)\s*\]|\.\.\.|…)\s*$", "", sub))[:40]):
             sub = ""
     return {"url": url, "title": title, "sub": sub, "date": d.isoformat() if d else "", "author": auth,
             "free": free, "paras": paras, "page_has": page[:400000]}
@@ -590,6 +634,9 @@ h2 { font-size: 19pt; line-height: 1.15; margin: 0 0 2mm; }
 .sub { font-size: 11pt; color: #333; margin: 0 0 2mm; font-weight: bold; }
 .byline { font-size: 10pt; margin-bottom: 3mm; }
 .byline b { font-size: 11pt; }
+.hdr { break-inside: avoid; page-break-inside: avoid; break-after: avoid; page-break-after: avoid; }
+.body p:first-child { break-before: avoid; }
+.body h4.mid { font-family: "Yehuda CLM", "David CLM", "Noto Sans Hebrew", sans-serif; font-size: 10.5pt; font-weight: bold; margin: 2.2mm 0 0.8mm; break-after: avoid; page-break-after: avoid; }
 .body p { margin: 0 0 1.2mm; text-indent: 0; text-align: justify; hyphens: none; orphans: 2; widows: 2; }
 
 .body p:first-child { font-weight: bold; }
@@ -645,10 +692,10 @@ def build_html(arts: list, fmt: str, title: str, hdate: str, fri: date, pad: int
              f'<div class="toc">{"".join(toc)}</div></div></section>')
     body = []
     for a in arts:
-        paras = "".join(f"<p>{esc(p)}</p>" for p in a["paras"])
-        body.append(f'<article id="{a["id"]}"><div class="kicker">{esc(a["paper"])}</div><h2>{esc(a["title"])}</h2>'
+        paras = "".join(f'<h4 class="mid">{esc(p[2:])}</h4>' if p.startswith("§§") else f"<p>{esc(p)}</p>" for p in a["paras"])
+        body.append(f'<article id="{a["id"]}"><div class="hdr"><div class="kicker">{esc(a["paper"])}</div><h2>{esc(a["title"])}</h2>'
                     + (f'<div class="sub">{esc(a["sub"])}</div>' if a.get("sub") else "")
-                    + f'<div class="byline"><b>{esc(a["writer"])}</b> · {fmt_date(a.get("date", ""))}</div>'
+                    + f'<div class="byline"><b>{esc(a["writer"])}</b> · {fmt_date(a.get("date", ""))}</div></div>'
                     f'<div class="body">{paras}</div><div class="end">❖</div></article>')
     blanks = '<div class="blank"></div>' * pad
     back = '<section class="back">שבת שלום ומבורך</section>' if fmt == "A5" else ""
