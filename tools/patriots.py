@@ -2,6 +2,7 @@
 ברירת מחדל: הפטריוטים -> 2/1/3. עם FOLDER/KEEP/DONE/CH/MATCH/LABEL (מ-client_payload של "ytline") - כל סדרה אחרת,
 למשל דרשת הרב ברוך רוזנבלום -> 8/2/1 (2 אחרונות)."""
 import json, os, re, subprocess, sys, urllib.parse, urllib.request
+from html import unescape as html_unescape
 API = "https://www.call2all.co.il/ym/api/"
 KEY = os.environ["YM_TOKEN"].strip()
 FOLDER = (os.environ.get("FOLDER") or "/2/1/3").strip()
@@ -42,6 +43,43 @@ if "," in vid or (not vid and PL):  # כמה סרטונים (או N אחרוני
     for v in vids:
         bad += subprocess.run([sys.executable, __file__], env={**os.environ, "VID": v, "PL": ""}).returncode != 0
     sys.exit(1 if bad else 0)
+if not vid and os.environ.get("WATCH") == "1":
+    # מצב "מחכה מוכן" (20/11): הריצה מתחילה לפני שהפרק עולה, הכול כבר מותקן, ובודקת כל 20 שניות את רשימת הסרטונים
+    # של הערוץ (מהיר יותר מ-RSS שמתעדכן באיחור של 5-15 דק'). כשהפרק של הערב מופיע - מורידים מיד.
+    import time
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    now = datetime.now(ZoneInfo("Asia/Jerusalem"))
+    ev = (now - timedelta(days=1) if now.hour < 12 else now).date()  # אחרי חצות - עדיין הערב של אתמול
+    dates = {ev.strftime("%d.%m.%Y"), f"{ev.day}.{ev.month}.{ev.year}", ev.strftime("%d.%m.%y"), f"{ev.day}.{ev.month}.{str(ev.year)[2:]}"}
+    end = time.time() + 60 * int(os.environ.get("UNTIL") or 180)
+    done0, n = done_list(), 0
+    print(f"::notice title={LABEL} watch::מחכה לפרק של {ev} עד {int(os.environ.get('UNTIL') or 180)} דק'", flush=True)
+    while not vid and time.time() < end:
+        n += 1
+        cands = []
+        r = subprocess.run(["yt-dlp", "--flat-playlist", "--playlist-end", "12", "--print", "%(id)s\t%(title)s",
+                            f"https://www.youtube.com/channel/{CH}/videos"], capture_output=True, text=True, timeout=90)
+        cands += [l.split("\t", 1) for l in r.stdout.splitlines() if "\t" in l]
+        if n % 3 == 1:  # גם ה-RSS, למקרה שהרשימה נכשלת
+            try:
+                x = urllib.request.urlopen(f"https://www.youtube.com/feeds/videos.xml?channel_id={CH}", timeout=30).read().decode()
+                cands += [(re.search(r"<yt:videoId>([^<]+)", e).group(1), html_unescape(re.search(r"<title>([^<]+)", e).group(1)))
+                          for e in re.findall(r"<entry>(.*?)</entry>", x, re.S)]
+            except Exception:  # noqa: BLE001
+                pass
+        if n == 1:
+            print(f"::notice title={LABEL} watch list::{len(cands)} סרטונים, ראשון: {(cands[0][1] if cands else (r.stderr or '')[-200:])[:90]}", flush=True)
+        for v, t in cands:
+            if all(w in t for w in MATCH) and any(d in t for d in dates) and v not in done0:
+                vid = v
+                print(f"::notice title={LABEL} found::{t[:80]} ({v}) אחרי {n} בדיקות", flush=True)
+                break
+        if not vid:
+            time.sleep(20)
+    if not vid:
+        print(f"::notice title={LABEL} watch::הפרק של {ev} לא עלה בזמן ההמתנה - השרת יפעיל כרגיל כשיופיע ב-RSS")
+        sys.exit(0)
 if not vid:  # בלי מזהה - הסרטון האחרון מהערוץ שמתאים למילים
     x = urllib.request.urlopen(f"https://www.youtube.com/feeds/videos.xml?channel_id={CH}", timeout=30).read().decode()
     for e in re.findall(r"<entry>(.*?)</entry>", x, re.S):

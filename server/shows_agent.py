@@ -38,6 +38,9 @@ J = {
 SUN_THU = (6, 0, 1, 2, 3)
 SCHEDULE = []  # 19/11: המהדורות, אולפן שישי ופגוש עברו ל-editions_agent (ישירות מהשרת, בלי GitHub ובלי דפדפן)
 # טורי סוף השבוע (yt-agent, workflow "columns"): בשישי 7:00 / 9:00 / 10:00 - מייל הבחירה יוצא כשהכול עלה (ב-10 עם מה שיש)
+# הפטריוטים "מחכה מוכן": ריצה ב-nosh-line-ops שמתחילה לפני שהפרק עולה ובודקת כל 20 שנ' (במקום RSS שמאחר) - כדי שהקו
+# שלנו יעלה ראשון. א'-ה' + מוצ"ש (לא שישי). השומר של ה-RSS נשאר כגיבוי.
+PAT_WARM = [((6, 0, 1, 2, 3, 5), "22:05", "210")]
 COLUMNS = [((4,), "07:00", "7"), ((4,), "09:00", "9"), ((4,), "10:00", "10")]
 
 
@@ -282,6 +285,17 @@ def cycle(st):
                 status(st, f"טורי סוף השבוע {hm}: הופעל ({code})")
             except Exception as e:  # noqa: BLE001
                 log("columns dispatch failed", str(e)[:200])
+    for days, hm, until in PAT_WARM:
+        h, m = map(int, hm.split(":"))
+        t = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        k = f"{now.date()} patwarm"
+        if now.weekday() in days and t <= now < t + timedelta(minutes=20) and k not in st["fired"]:
+            try:
+                code = dispatch([], repo="TheSuperArie/nosh-line-ops", event="patriots", payload={"watch": "1", "until": until})
+                st["fired"][k] = 1
+                status(st, f"הפטריוטים: ריצת המתנה הופעלה ({code})")
+            except Exception as e:  # noqa: BLE001
+                log("patwarm dispatch failed", str(e)[:200])
     st["fired"] = dict(list(st["fired"].items())[-50:])
     # 3. הפעלה ב-GitHub (מאחדים הכול לריצה אחת, ומחכים בין ריצות)
     if st["pending"] and time.time() - st.get("last", 0) > GAP:

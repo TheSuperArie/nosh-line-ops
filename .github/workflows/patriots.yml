@@ -5,11 +5,11 @@ on:
   repository_dispatch:
     types: [patriots, ytline]
   workflow_dispatch:
-concurrency: patriots
+concurrency: ${{ github.event.action || 'manual' }}  # הפטריוטים בנפרד מסדרות אחרות (ytline)
 jobs:
   p:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 240  # מצב המתנה (watch) מחכה עד כמה שעות לפרק
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -38,3 +38,5 @@ jobs:
           PLF: ${{ github.event.client_payload.plf }}
           PL: ${{ github.event.client_payload.pl }}
           LAST: ${{ github.event.client_payload.last }}
+          WATCH: ${{ github.event.client_payload.watch }}
+          UNTIL: ${{ github.event.client_payload.until }}
