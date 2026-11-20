@@ -163,7 +163,7 @@ def _norm(x: str) -> str:
     return re.sub(r"\W+", "", x)
 
 
-def html_sequence(page: str, ref: str) -> list:
+def html_sequence(page: str, ref: str, cur: int = 0) -> list:
     """פסקאות + כותרות ביניים לפי סדר ה-HTML בתוך <article> (מעריב: הפסקה הראשונה וכותרות הביניים חסרות ב-articleBody).
     מוחזר רק אם רוב הפסקאות נמצאות גם בטקסט הייחוס (articleBody / trafilatura) - אחרת [] (לא נוגעים)."""
     m = re.search(r"<article\b.*?</article>", page, re.S)
@@ -182,7 +182,8 @@ def html_sequence(page: str, ref: str) -> list:
     ps = [x for x in seq if not x.startswith("§§")]
     rn = _norm(ref)
     hit = sum(1 for x in ps if _norm(x)[:40] in rn)
-    if len(ps) >= 4 and hit >= 0.7 * len(ps) and sum(len(x) for x in ps) >= 0.8 * len(ref):
+    # רק אם זה לא מאבד טקסט ביחס למה שכבר חולץ (במעריב לפעמים חלק מהגוף לא ב-<p>)
+    if len(ps) >= 4 and hit >= 0.7 * len(ps) and sum(len(x) for x in ps) >= 0.97 * cur:
         while seq and seq[-1].startswith("§§"):
             seq.pop()
         return seq
@@ -227,7 +228,7 @@ def body_paragraphs(page: str, ld: dict) -> list:
                         cur = ""
                 if cur:
                     paras.append(cur)
-    seq = html_sequence(page, re.sub(r"<[^>]+>", " ", ab) if ab else " ".join(paras))
+    seq = html_sequence(page, re.sub(r"<[^>]+>", " ", ab) if ab else " ".join(paras), sum(len(x) for x in paras))
     if seq:
         paras = seq
     clean = []
