@@ -383,6 +383,28 @@ def repair():
             save(st)
             log(f"re-voiced {fixed} flash(es) that had fallen back to ימות TTS")
 
+def sweep():
+    """מוחק מהשלוחה קבצי מבזקים "יתומים" שהסוכן לא עוקב אחריהם (שאריות מתקלות העלאה/מחיקה).
+    בלי זה, אחרי שהמספור חוזר ל-000, יתומים עם מספר גבוה נשמעים ראשונים (השלוחה מנגנת מהגבוה לנמוך)."""
+    if not shabbat_ok():
+        return
+    with lock:
+        st = load()
+        tracked = {(f["n"], f["k"]) for f in st.get("files") or []}
+        if not tracked:
+            return
+        d = ym("GetIVR2Dir", path=f"ivr2:{EXT}")
+        if d.get("responseStatus") != "OK":
+            return
+        gone = 0
+        for f in (d.get("files") or []) + (d.get("ini") or []):
+            m = re.match(r"^(\d{3})\.(wav|tts)$", f.get("name") or "")
+            if m and (int(m.group(1)), m.group(2)) not in tracked:
+                if ym("FileAction", action="delete", what=f"ivr2:{EXT}/{m.group(0)}").get("responseStatus") == "OK":
+                    gone += 1
+        if gone:
+            log(f"sweep: deleted {gone} orphan file(s)")
+
 def listen():
     """זרם האירועים - מתעורר מיד כשיש הודעה חדשה."""
     while True:
@@ -412,10 +434,14 @@ if __name__ == "__main__":
         sys.exit(0)
     log("news agent started")
     threading.Thread(target=listen, daemon=True).start()
+    last_sweep = 0
     while True:
         try:
             sync("poll")
             repair()
+            if time.time() - last_sweep > 600:
+                last_sweep = time.time()
+                sweep()
         except Exception as e:  # noqa
             log("poll error:", str(e)[:150])
         time.sleep(60)
