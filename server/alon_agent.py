@@ -287,7 +287,9 @@ def nikud(t):
         for w in json.loads(r.stdout.decode("utf-8")):
             opts = w.get("options") or []
             out += w["word"] if w.get("sep") or not opts else (opts[0][0] if isinstance(opts[0], list) else opts[0]).replace("|", "")
-        out = out.replace("\u05bd", "")  # מתגים (דיקטה מסמנת בהם ו/י שקטות בכתיב מלא) - לא צריך להקראה
+        # דיקטה כותבת כתיב מלא ומסמנת ו/י שקטות במתג ("בֹּוֽקֶר", "מִיֽטָּה"). הקריין קורא אותן כעוד ו' ("שעווות"),
+        # לכן מוחקים את האות השקטה עצמה (-> "בֹּקֶר", "מִטָּה"), ואז את שאר המתגים
+        out = re.sub("[\u05d5\u05d9]\u05bd", "", out).replace("\u05bd", "")
         bare = lambda x: re.sub(r"[\u0591-\u05C7\s]", "", x)  # noqa: E731
         if len(bare(out)) < 0.9 * len(bare(t)):
             raise ValueError("short result")
