@@ -34,6 +34,7 @@ SECTIONS = [
 ]
 SKIP = {"0"}  # שאלות גפ"ת - לא עולה (ביקש 19/11); נשאר ברשימה רק כדי לסמן איפה נגמרות החידות
 JOKES = "1"   # הגיגים - כל הגיג בהודעה נפרדת
+NIKUD = set(os.environ.get("ALON_NIKUD", "1").split(","))  # מדורים שמנוקדים אוטומטית לפני ההקראה (25/11: הגיגים)
 
 STATUS = []
 
@@ -104,7 +105,8 @@ def pending(st):
     out = {}
     idx = ym("GetTextFile", what="ivr2:/AgentCode/alon_index.txt").get("contents") or ""
     for line in idx.splitlines():
-        m = re.match(r"^\s*(\d{4}-\d\d-\d\d_\d{4})\s+(\d+)\s*$", line)
+        # אפשר להוסיף בסוף השורה: only=1,5 (רק המדורים האלה) replace=<מזהה ישן> (מוחק את הקבצים של העלון הישן במדורים האלה)
+        m = re.match(r"^\s*(\d{4}-\d\d-\d\d_\d{4})\s+(\d+)((?:\s+\w+=\S+)*)\s*$", line)
         if not m or m.group(1) in st.get("finished", []):
             continue
         iid, n = m.group(1), int(m.group(2))
@@ -112,7 +114,25 @@ def pending(st):
             out[iid] = {"parts": {i: f"alon_{iid}_{i}of{n}.txt" for i in range(1, n + 1)}, "n": n}
         else:
             out[iid] = {"parts": {}, "n": 0, "body": f"alon_{iid}_body.txt"}
+        opts = dict(o.split("=", 1) for o in m.group(3).split())
+        if opts.get("only"):
+            out[iid]["only"] = opts["only"].split(",")
+        if opts.get("replace"):
+            out[iid]["replace"] = opts["replace"]
     return out
+
+
+def drop_issue(st, ext, old_iid):
+    """מוחק מהשלוחה את הקבצים של עלון ישן (כשמעלים אותו מחדש אחרי תיקון)."""
+    issues = st.setdefault("slots", {}).setdefault(ext, [])
+    for item in [x for x in issues if x[0] == old_iid]:
+        for sl in item[1]:
+            try:
+                ym("FileAction", action="delete", what=f"ivr2:/8/3/{ext}/{sl}.wav")
+            except Exception:  # noqa: BLE001
+                pass
+        issues.remove(item)
+        log(old_iid, f"replaced: deleted /8/3/{ext} {item[1]}")
 
 
 def get_text(name):
@@ -125,35 +145,63 @@ def pdf_text(data):
     return "\n".join((p.extract_text() or "") for p in r.pages)
 
 
-def pdf_jokes(data):
-    """ההגיגים: כל הגיג מתחיל בשורה שהמילים הראשונות שלה מודגשות. מחזיר רשימת הגיגים (או [] אם לא נמצאו)."""
+def joke_keys(data):
+    """המילים המודגשות שפותחות כל הגיג (הגיג מתחיל בשורה שהקטע הראשון שלה מודגש).
+    עוברים על הטקסט בסדר שבו הוא כתוב בקובץ (טור אחרי טור) - לא לפי גובה בעמוד, כי בעלון הרגיל
+    יש 3 טורים באותו גובה (באג 25/11: כל ההגיגים התערבבו בין הטורים)."""
     pypdf = need("pypdf", "pypdf")
-    jokes, inside = [], False
+    keys, inside = [], False
     for page in pypdf.PdfReader(io.BytesIO(data)).pages:
-        rows = {}
+        frags = []
 
         def v(text, cm, tm, fd, fs):
-            if text.strip():
-                y = round(tm[5] * cm[3] + cm[5], 1)
-                rows.setdefault(y, []).append(("Bold" in str((fd or {}).get("/BaseFont", "")), text))
+            if text:
+                frags.append((tm[5] * cm[3] + cm[5], "Bold" in str((fd or {}).get("/BaseFont", "")), text))
         page.extract_text(visitor_text=v)
-        for y in sorted(rows, reverse=True):
-            parts = rows[y]
-            line = " ".join(t.strip() for _, t in parts).strip()
+        lines, y0 = [], None
+        for y, bold, text in frags:  # שורה חדשה = שינוי בגובה
+            if y0 is None or abs(y - y0) > 2:
+                lines.append([])
+                y0 = y
+            lines[-1].append((bold, text))
+        for parts in lines:
+            parts = [p for p in parts if p[1].strip()]
+            if not parts:
+                continue
+            line = "".join(t for _, t in parts)
             if "הגיגים המיועדים" in line:
                 inside = True
                 continue
             if not inside:
                 continue
             if "היכן ניתן להשיג" in line:
-                return [j for j in jokes if len(j) > 5]
-            if re.fullmatch(r"\d{0,2}\s*עלון .{1,30}תש\S{1,4}", line) or re.fullmatch(r"\d{1,2}", line):
-                continue  # כותרת/מספר עמוד
-            if parts[0][0] or not jokes:
-                jokes.append(line)
-            else:
-                jokes[-1] += " " + line
-    return [j for j in jokes if len(j) > 5] if inside else []
+                return keys
+            if parts[0][0]:
+                k = ""
+                for bold, t in parts:
+                    if not bold:
+                        break
+                    k += t
+                if len(re.sub(r"\W", "", k)) >= 2:
+                    keys.append(k.strip())
+    return keys if inside else []
+
+
+def pdf_jokes(data, body):
+    """מחלק את מדור ההגיגים (body = הטקסט הרגיל, שיוצא בסדר נכון) להגיגים, לפי המילים המודגשות. [] אם לא נמצאו."""
+    body = re.sub(r"^.{0,10}הגיגים המיועדים[^\n]{0,40}?תועלת מזה\.?\s*", "", body)
+    starts, pos = [], 0
+    for k in joke_keys(data):
+        rx = r"\s*".join(re.escape(c) for c in re.sub(r"\s", "", k))
+        m = re.compile(rx).search(body, pos)
+        if m:
+            starts.append(m.start())
+            pos = m.end()
+    if len(starts) < 2:
+        return []
+    starts[0] = 0  # מה שלפני ההגיג הראשון (אם יש) מצטרף אליו
+    jokes = [body[a:b].strip() for a, b in zip(starts, starts[1:] + [len(body)])]
+    return [j for j in jokes if len(j) > 5]
 
 
 # ---------- חלוקה למדורים והכנה להקראה ----------
@@ -205,7 +253,7 @@ ABBR = [  # ראשי תיבות נפוצים -> הקראה
     ("ב\"ה", "ברוך השם"), ("בע\"ה", "בעזרת השם"), ("אי\"ה", "אם ירצה השם"), ("רח\"ל", "רחמנא ליצלן"),
     ("גמ'", "גמרא"), ("רש\"י", "רשי"), ("פרש\"י", "פירש רשי"), ("תוס'", "תוספות"), ("שו\"ע", "שולחן ערוך"),
     ("משנ\"ב", "משנה ברורה"), ("ז\"א", "זאת אומרת"), ("כנ\"ל", "כנזכר לעיל"), ("וכדו'", "וכדומה"),
-    ("ת\"ח", "תלמיד חכם"), ("ת\"ת", "תלמוד תורה"), ("יו\"ט", "יום טוב"), ("ר\"ה", "ראש השנה"),
+    ("המג\"ש", "המגיד שיעור"), ("מג\"ש", "מגיד שיעור"), ("הנ\"ל", "הנזכר לעיל"), ("ת\"ח", "תלמיד חכם"), ("ת\"ת", "תלמוד תורה"), ("יו\"ט", "יום טוב"), ("ר\"ה", "ראש השנה"),
 ]
 
 
@@ -214,7 +262,37 @@ def speakable(t):
     for a, b in ABBR:
         t = re.sub(r"(?<![֐-׿])" + re.escape(a) + r"(?![֐-׿])", b, t)
     t = re.sub(r"\S+@\S+", "", t)  # כתובות מייל לא מוקראות
-    return re.sub(r"\s{2,}", " ", t).strip()
+    # פיסוק: בלי רווח לפני סימן ("נאות ." -> "נאות."), רווח אחרי סימן שצמוד למילה, "---" = הפסקה
+    t = re.sub(r"\s*-{2,}\s*", ". ", t)
+    t = re.sub(r"\s+([.,?!:;])", r"\1", t)
+    t = re.sub(r"([.,?!:;]+)(?=[א-תA-Za-z\"(])", r"\1 ", t)
+    t = re.sub(r"([.,?!:;])\1+", r"\1", t.replace("...", "…")).replace("…", "...")
+    t = re.sub(r"\s{2,}", " ", t).strip()
+    if t and t[-1] not in ".?!:\"'":
+        t += "."
+    return t
+
+
+NAKDAN = "https://nakdan-2-0.loadbalancer.dicta.org.il/api"  # הנקדן החינמי של דיקטה
+
+
+def nikud(t):
+    """מוסיף ניקוד מלא (נקדן דיקטה) כדי שהקריין יקרא נכון. אם נכשל - מחזיר את הטקסט כמו שהוא."""
+    try:
+        body = json.dumps({"task": "nakdan", "data": t, "genre": "modern", "addmorph": True, "keepnikud": True,
+                           "keepqq": False, "nodageshdefmem": False, "patachma": False, "keepmetagim": True})
+        r = subprocess.run(["curl", "-sS", "-m", "90", "-H", "Content-Type: text/plain;charset=UTF-8", "--data-binary", "@-", NAKDAN],
+                           input=body.encode(), capture_output=True, timeout=120)
+        out = ""
+        for w in json.loads(r.stdout.decode("utf-8")):
+            opts = w.get("options") or []
+            out += w["word"] if w.get("sep") or not opts else (opts[0][0] if isinstance(opts[0], list) else opts[0]).replace("|", "")
+        if len(re.sub(r"[\u0591-\u05C7]", "", out).replace(" ", "")) < 0.9 * len(t.replace(" ", "")):
+            raise ValueError("short result")
+        return out
+    except Exception as e:  # noqa: BLE001
+        log("nikud failed", str(e)[:120])
+        return t
 
 
 def chunks(t, size=2500):
@@ -300,19 +378,25 @@ def process(iid, e, st):
     log(iid, "parasha", name or "?", "sections", "".join(sorted(secs)))
     done = st["done"].setdefault(iid, [])
     for ext, (title, body) in sorted(secs.items(), key=lambda x: int(x[0]) or 10):
-        if ext in done or ext in SKIP:
+        if ext in done or ext in SKIP or (e.get("only") and ext not in e["only"]):
             continue
+        if e.get("replace") and f"{iid}|{ext}" not in st.get("partial", {}):
+            drop_issue(st, ext, e["replace"])
+            save(st)
         intro = f"עלון לשבת{', פרשת ' + name if name else ''}. {title}. "
         try:
             items = [intro + body]
             if ext == JOKES and pdf:
-                jokes = pdf_jokes(pdf)
+                jokes = pdf_jokes(pdf, body)
                 if len(jokes) > 1:
                     items = list(reversed(jokes))  # הראשון בעלון מקבל את המספר הגבוה = נשמע ראשון
             key = f"{iid}|{ext}"
             slots = st.setdefault("partial", {}).setdefault(key, [])  # התקדמות נשמרת אחרי כל קובץ
             for it in items[len(slots):]:
-                slots.append(upload(render(speakable(it)), f"/8/3/{ext}"))
+                txt = speakable(it)
+                if ext in NIKUD:
+                    txt = nikud(txt)
+                slots.append(upload(render(txt), f"/8/3/{ext}"))
                 save(st)
                 time.sleep(2)
             st["partial"].pop(key, None)
