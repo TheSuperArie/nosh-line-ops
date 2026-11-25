@@ -288,7 +288,8 @@ def nikud(t):
             opts = w.get("options") or []
             out += w["word"] if w.get("sep") or not opts else (opts[0][0] if isinstance(opts[0], list) else opts[0]).replace("|", "")
         out = out.replace("\u05bd", "")  # מתגים (דיקטה מסמנת בהם ו/י שקטות בכתיב מלא) - לא צריך להקראה
-        if len(re.sub(r"[\u0591-\u05C7]", "", out).replace(" ", "")) < 0.9 * len(t.replace(" ", "")):
+        bare = lambda x: re.sub(r"[\u0591-\u05C7\s]", "", x)  # noqa: E731
+        if len(bare(out)) < 0.9 * len(bare(t)):
             raise ValueError("short result")
         return out
     except Exception as e:  # noqa: BLE001
