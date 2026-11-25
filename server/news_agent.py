@@ -1,6 +1,6 @@
 """סוכן המבזקים לקו נווה שלום (שלוחה 1).
 מאזין לזרם האירועים של אותנטי ניוז (מתעדכן מיד כשעולה מבזק), ובנוסף בודק כל דקה ליתר ביטחון.
-כל מבזק חדש מוקרא מראש לקובץ שמע (edge-tts, קול גבר "אברי") ועולה לשלוחה 1 - החדש ביותר ראשון. שומר 30 אחרונים.
+כל מבזק חדש מוקרא מראש לקובץ שמע (edge-tts, קול גבר "אברי") ועולה לשלוחה 1 - החדש ביותר ראשון. שומר עד 250 מבזקים מ-15 השעות האחרונות.
 אם ההקראה נכשלת - נופל לקובץ הקראה של ימות (.tts) כמו קודם.
 בשבת ויום טוב - לא עושה כלום (שומר שבת), ובמוצאי שבת משלים.
 הפעלה: YM_TOKEN=... python3 news_agent.py        (או --once לריצה אחת)"""
@@ -15,7 +15,7 @@ SITE = os.environ.get("NEWS_SITE", "https://authenti.newsupdates.click")
 API = "https://www.call2all.co.il/ym/api/"
 KEY = os.environ.get("YM_TOKEN", "").strip()
 EXT = os.environ.get("NEWS_EXT", "/1")
-KEEP = int(os.environ.get("NEWS_KEEP", "30"))
+KEEP = int(os.environ.get("NEWS_KEEP", "250"))
 STATE = os.environ.get("NEWS_STATE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "news_state.json"))
 IL = ZoneInfo("Asia/Jerusalem")
 VOICE = os.environ.get("NEWS_VOICE", "fr-FR-RemyMultilingualNeural")  # נבחר 13/11 (קודם: he-IL-AvriNeural)
@@ -302,7 +302,7 @@ def put_item(i, it):
     r = ym("UploadTextFile", what=f"ivr2:{EXT}/{i:03d}.tts", contents=it["say"])
     return "tts" if r.get("responseStatus") == "OK" else None
 
-MAX_AGE = float(os.environ.get("NEWS_MAX_DAYS", "3")) * 86400
+MAX_AGE = float(os.environ.get("NEWS_MAX_HOURS", "15" if EXT == "/1" else "72")) * 3600  # שלוחה 1: 15 שעות (ביקש 22/11)
 
 def publish(st, new_items):
     """שמות קבועים: כל מבזק חדש מקבל מספר גבוה מהקודם (השלוחה מנגנת מהגבוה לנמוך), והקיימים לא זזים -
