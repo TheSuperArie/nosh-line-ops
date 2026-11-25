@@ -1,0 +1,13 @@
+name: nikud_test
+on:
+  repository_dispatch:
+    types: [nikud_test]
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/nikud_test.py
+        env:
+          TEXT: ${{ github.event.client_payload.text }}
