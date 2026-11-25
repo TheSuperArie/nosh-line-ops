@@ -14,9 +14,9 @@ except ImportError:  # פייתון 3.8 (אובונטו 20.04)
 SITE = os.environ.get("NEWS_SITE", "https://authenti.newsupdates.click")
 API = "https://www.call2all.co.il/ym/api/"
 KEY = os.environ.get("YM_TOKEN", "").strip()
-EXT = os.environ.get("NEWS_EXT", "/1")
-KEEP = int(os.environ.get("NEWS_KEEP", "250"))
-STATE = os.environ.get("NEWS_STATE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "news_state.json"))
+EXT = os.environ.get("NEWS_EXT", "/8/1/1")  # 25/11: אותנטי ניוז עבר ל-8/1/1 (בשלוחה 1 עכשיו הגזרה)
+KEEP = int(os.environ.get("NEWS_KEEP", "250" if EXT == "/1" else "30"))
+STATE = os.environ.get("NEWS_STATE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "news_auth811_state.json"))  # מצב חדש אחרי ההחלפה
 IL = ZoneInfo("Asia/Jerusalem")
 VOICE = os.environ.get("NEWS_VOICE", "fr-FR-RemyMultilingualNeural")  # נבחר 13/11 (קודם: he-IL-AvriNeural)
 RATE = os.environ.get("NEWS_RATE", "+12%")
@@ -72,7 +72,7 @@ def clean(text):
     t = re.sub(r"\.{2,}", ".", re.sub(r"\s{2,}", " ", t)).strip(" .")
     return t[:700]
 
-MEDIA = os.environ.get("NEWS_MEDIA") == "1"  # להעלות גם סרטונים/הקלטות (את הקול שלהם) - כרגע רק בחתול השחור
+MEDIA = os.environ.get("NEWS_MEDIA") == "1"  # להעלות גם סרטונים/הקלטות (את הקול שלהם) - בחתול השחור ובגזרה
 
 def media_url(m):
     t = m.get("text") or ""
