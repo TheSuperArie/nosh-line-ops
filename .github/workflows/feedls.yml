@@ -1,0 +1,17 @@
+name: feedls
+on:
+  repository_dispatch:
+    types: [feedls]
+jobs:
+  f:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          URL: ${{ github.event.client_payload.url }}
+        run: |
+          curl -sS -m 30 -A "Mozilla/5.0" "$URL" | python3 -c '
+          import re,sys,html
+          s=sys.stdin.read()
+          for it in re.findall(r"<item>(.*?)</item>",s,re.S)[:25]:
+              g=lambda t:html.unescape((re.search(rf"<{t}>(.*?)</{t}>",it,re.S) or [0,""])[1]).strip()[:90]
+              print(g("pubDate")[:22],"|",g("itunes:episodeType"),"|",g("itunes:duration"),"|",g("title"))'
