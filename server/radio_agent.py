@@ -1,7 +1,7 @@
 """סוכן הרדיו לקו נווה שלום - רץ בשרת (בלי GitHub): בודק כל 5 דקות אם עלתה תוכנית מלאה חדשה,
 מוריד את ה-MP3 ישירות מהאתר ומעלה לשלוחה (ימות ממיר בעצמו). שמות קבצים קבועים: החדש מקבל את המספר הגבוה.
 פתחי וזמרי (גלי ישראל) א'-ה' -> 2/1/1 | ינון מגל ובן כספית (103) ב'-ד' -> 2/1/2 | מחשבות בע"מ (גלצ) ו' -> 2/2
-שניים עד ארבע (103, רון שלום ויואב כהן) א'-ה' -> 2/2"""
+שניים עד ארבע (103, רון שלום ויואב כהן) א'-ה' -> 2/2 | אראל סג"ל (103, פיד Omny) א'-ה' -> 2/2"""
 import html, io, json, os, platform, re, stat, subprocess, tarfile, time, urllib.parse, urllib.request
 from datetime import datetime
 try:
@@ -18,12 +18,15 @@ IL = ZoneInfo("Asia/Jerusalem")
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36"
 GLZ = ("https://www.omnycontent.com/d/playlist/6dcbc33f-1fb6-49de-9ae2-ad8a00c01523/"
        "71453d31-14da-43ed-ae4a-adef00df863c/755c5b83-44d1-4a8c-b88f-adef00e16066/podcast.rss")
+SEG = ("https://www.omnycontent.com/d/playlist/178d72a7-a889-4132-8008-a5cc014ed109/"
+       "70b9dbd1-1145-4daa-ad6d-b1ab00ab51df/d7f009d3-e14c-46d1-a4f8-b1ab00abb1c6/podcast.rss")  # אראל סג"ל (103)
 # יום: 0=שני ... 4=שישי 6=ראשון (weekday של פייתון)
 SHOWS = [  # (שם, ימים, שעות, תיקייה, כמה לשמור)
     ("gly", (6, 0, 1, 2, 3), (9, 20), "/2/1/1", 6),
     ("103", (0, 1, 2), (9, 20), "/2/1/2", 6),
     ("glz", (4,), (7, 15), "/2/2", 15),
     ("103b", (6, 0, 1, 2, 3), (14, 23), "/2/2", 15),  # שניים עד ארבע
+    ("seg", (6, 0, 1, 2, 3), (7, 23), "/2/2", 15),  # אראל סג"ל (ביקש 25/11)
 ]
 
 
@@ -59,10 +62,13 @@ def ym(name, **p):
 def rss(url, need_full):
     out = []
     for it in re.findall(r"<item>(.*?)</item>", get(url), re.S)[:15]:
+        if need_full == "omny":  # בפיד Omny התוכנית המלאה מסומנת episodeType full
+            if "<itunes:episodeType>full" not in it and "המלאה" not in it:
+                continue
         m = re.search(r"<title>(.*?)</title>", it, re.S)
         t = re.sub(r"^<!\[CDATA\[|\]\]>$", "", html.unescape(m.group(1)).strip()) if m else ""
         enc = re.search(r'<enclosure[^>]*url="([^"]+)"', it)
-        if t and enc and (not need_full or "המלאה" in t):
+        if t and enc and (need_full is not True or "המלאה" in t):
             out.append((t, t, html.unescape(enc.group(1))))
     return out
 
@@ -87,7 +93,9 @@ SRC = {
     "103": lambda: rss("https://103fm.maariv.co.il/rss/mediarss.aspx?programId=262", True),
     "glz": lambda: rss(GLZ, False),
     "103b": lambda: rss("https://103fm.maariv.co.il/rss/mediarss.aspx?programId=627", True),
+    "seg": lambda: rss(SEG, "omny"),
 }
+FIRST_UPLOAD = {"seg"}  # בהפעלה הראשונה מעלים מיד את החדשה ביותר (ולא רק מהבאה)
 
 
 def load():
@@ -159,6 +167,10 @@ def cycle(st):
             continue
         seen = st["seen"].get(name)
         st["seen"][name] = list(dict.fromkeys((seen or []) + [i[0] for i in items]))[-80:]
+        if seen is None and name in FIRST_UPLOAD and items:
+            seen = [i[0] for i in items[1:]]
+            st["seen"][name] = list(dict.fromkeys(seen + [items[0][0]]))
+            log("first look", name, len(items), "- uploading the newest now")
         if seen is None:
             log("first look", name, len(items), "(not uploading old ones)")
             save(st)
