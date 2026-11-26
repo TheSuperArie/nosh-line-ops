@@ -57,6 +57,8 @@ WRITERS = [
 ]
 PAPER_ORDER = ["ישראל היום", "JNS", "מקור ראשון", "מעריב", "ידיעות אחרונות", "הארץ", "בשבע", "בשבע - אתנחתא"]
 NEEDS_IL = ("ih", "mr")
+# טורי מגזין שעולים לאתר כבר ברביעי בערב - מחפשים מרביעי בצהריים
+EARLY = {"עירית לינור", "אראל סג״ל"}
 
 
 # ---------- רשת ----------
@@ -578,7 +580,7 @@ def do_scan(arg: str) -> None:
     items, missing, paid = [], [], []
     for name, paper, sources in WRITERS:
         try:
-            arts = find_columns(name, sources, since, until)
+            arts = find_columns(name, sources, since - timedelta(hours=36) if name in EARLY else since, until)
         except Exception as e:  # noqa: BLE001
             print(f"::warning title=WRITER {name}::{type(e).__name__}: {e}", flush=True)
             arts = []
