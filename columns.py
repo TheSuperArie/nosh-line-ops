@@ -288,10 +288,12 @@ def name_match(name: str, art: dict) -> bool:
     keys = [name, name.replace("-", " "), name.replace(" ", "-")]
     if name == "יאיר יעקבי":
         keys.append("יאיר יעקובי")
-    if name == "אראל סג״ל":
-        keys += ['אראל סג"ל', "אראל סגל", "אראל סג'ל"]
     a = art.get("author", "")
     if any(k in a for k in keys):
+        return True
+    # גרשיים בכל צורה (סג"ל / סג״ל / סג''ל / סגל)
+    def _n(x): return re.sub(r"[\"'״׳]", "", x)
+    if any(_n(k) in _n(a) for k in keys if k):
         return True
     # אין שם כותב במטא-דאטה: מחפשים בשורת הכותב בדף
     pg = art.get("page_has", "")
