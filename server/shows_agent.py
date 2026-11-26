@@ -121,6 +121,10 @@ YTLINE = {
     "nehemia": {"pl": "PLpbtu_tNqwm5f3A1xKtqnjF-qJCdwHXrd", "match": "", "folder": "/8/9/2", "keep": 30,
                 "done": "ivr2:/AgentCode/nehemia_done.json", "label": "PODCAST892", "name": "פודקאסט 8/9/2",
                 "hours": (0, 1), "daily": True},
+    # פודקאסט פנייה מדרידיסטה לנחמיה -> 8/9/3 (26/11). רק הפלייליסט של הפרקים המלאים (בלי הקטעים הקצרים); נשמרים 4 אחרונים
+    "madridista": {"pl": "PLo-Wc_h-FeEtMHoS0v47l0Z1h-S6f0D-i", "match": "", "folder": "/8/9/3", "keep": 4,
+                   "done": "ivr2:/AgentCode/madridista_done.json", "label": "PODCAST893", "name": "פודקאסט 8/9/3",
+                   "hours": (0, 1), "daily": True},
 }
 
 
