@@ -1,0 +1,10 @@
+name: kanprobe
+on:
+  repository_dispatch:
+    types: [kanprobe]
+jobs:
+  k:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/kanprobe.py
