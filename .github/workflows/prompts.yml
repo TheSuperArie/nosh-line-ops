@@ -8,7 +8,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: pip install -q edge-tts zmanim && (which ffmpeg || sudo apt-get install -y -q ffmpeg)
+      - run: pip install -q edge-tts zmanim && (which ffmpeg || (sudo apt-get -qq update; sudo apt-get install -y -q ffmpeg))
       - run: python3 tools/prompts.py
         env:
           YM_TOKEN: ${{ secrets.YM_TOKEN }}

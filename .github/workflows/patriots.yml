@@ -17,7 +17,8 @@ jobs:
       - uses: denoland/setup-deno@v2
         with: {deno-version: v2.x}
       - run: |
-          sudo apt-get -qq install -y ffmpeg > /dev/null
+          sudo apt-get -qq update > /dev/null || true  # בלי update ה-apt מבקש גרסאות שנמחקו מהשרת (404)
+          sudo apt-get -qq install -y --fix-missing ffmpeg > /dev/null
           pip install -q -U "yt-dlp[default]" bgutil-ytdlp-pot-provider edge-tts
           docker run -d --name bgutil -p 4416:4416 --init brainicism/bgutil-ytdlp-pot-provider > /dev/null
           for i in $(seq 1 30); do curl -s localhost:4416/ping > /dev/null && break; sleep 1; done
