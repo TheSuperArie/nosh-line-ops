@@ -6,7 +6,7 @@ import json, os, re, subprocess, urllib.parse, urllib.request
 API = "https://www.call2all.co.il/ym/api/"
 KEY = os.environ.get("YM_TOKEN", "").strip()
 STATE = "ivr2:/AgentCode/line_state.json"
-KEEP = {"/2/2": 15, "/2/3": 15}  # ברירת מחדל 6
+KEEP = {"/2/2": 20, "/2/3": 15}  # ברירת מחדל 6
 
 
 def job():

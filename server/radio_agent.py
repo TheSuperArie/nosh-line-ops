@@ -1,7 +1,8 @@
 """סוכן הרדיו לקו נווה שלום - רץ בשרת (בלי GitHub): בודק כל 5 דקות אם עלתה תוכנית מלאה חדשה,
 מוריד את ה-MP3 ישירות מהאתר ומעלה לשלוחה (ימות ממיר בעצמו). שמות קבצים קבועים: החדש מקבל את המספר הגבוה.
 פתחי וזמרי (גלי ישראל) א'-ה' -> 2/1/1 | ינון מגל ובן כספית (103) ב'-ד' -> 2/1/2 | מחשבות בע"מ (גלצ) ו' -> 2/2
-שניים עד ארבע (103, רון שלום ויואב כהן) א'-ה' -> 2/2 | אראל סג"ל (103, פיד Omny) א'-ה' -> 2/2"""
+שניים עד ארבע (103, רון שלום ויואב כהן) א'-ה' -> 2/2 | אראל סג"ל (103, פיד Omny) א'-ה' -> 2/2
+קלמן ליברמן (כאן רשת ב, פיד Omny) א'-ד' -> 2/2 (עולה בערך 10:10)"""
 import html, io, json, os, platform, re, stat, subprocess, tarfile, time, urllib.parse, urllib.request
 from datetime import datetime
 try:
@@ -20,13 +21,16 @@ GLZ = ("https://www.omnycontent.com/d/playlist/6dcbc33f-1fb6-49de-9ae2-ad8a00c01
        "71453d31-14da-43ed-ae4a-adef00df863c/755c5b83-44d1-4a8c-b88f-adef00e16066/podcast.rss")
 SEG = ("https://www.omnycontent.com/d/playlist/178d72a7-a889-4132-8008-a5cc014ed109/"
        "70b9dbd1-1145-4daa-ad6d-b1ab00ab51df/d7f009d3-e14c-46d1-a4f8-b1ab00abb1c6/podcast.rss")  # אראל סג"ל (103)
+KAN_KL = ("https://www.omnycontent.com/d/playlist/23f697a0-7e6a-4e96-a223-a82c00962b12/"
+          "38b086c1-4375-4278-b26b-a98a00c5b2ec/59a27663-2872-491f-92b2-a98a00c5b2ec/podcast.rss")  # קלמן ליברמן (כאן ב)
 # יום: 0=שני ... 4=שישי 6=ראשון (weekday של פייתון)
 SHOWS = [  # (שם, ימים, שעות, תיקייה, כמה לשמור)
     ("gly", (6, 0, 1, 2, 3), (9, 20), "/2/1/1", 6),
     ("103", (0, 1, 2), (9, 20), "/2/1/2", 6),
-    ("glz", (4,), (7, 15), "/2/2", 15),
-    ("103b", (6, 0, 1, 2, 3), (16, 23), "/2/2", 15),  # שניים עד ארבע - רק מ-16:00 (הפריט מופיע בפיד לפני שהקובץ מוכן)
-    ("seg", (6, 0, 1, 2, 3), (7, 23), "/2/2", 15),  # אראל סג"ל (ביקש 25/11)
+    ("glz", (4,), (7, 15), "/2/2", 20),
+    ("103b", (6, 0, 1, 2, 3), (16, 23), "/2/2", 20),  # שניים עד ארבע - רק מ-16:00 (הפריט מופיע בפיד לפני שהקובץ מוכן)
+    ("seg", (6, 0, 1, 2, 3), (7, 23), "/2/2", 20),  # אראל סג"ל (ביקש 25/11)
+    ("kan", (6, 0, 1, 2, 3), (10, 20), "/2/2", 20),  # קלמן ליברמן א'-ד' (ביקש 26/11); ה' רק בשביל ההעלאה הראשונה
 ]
 
 
@@ -94,8 +98,11 @@ SRC = {
     "glz": lambda: rss(GLZ, False),
     "103b": lambda: rss("https://103fm.maariv.co.il/rss/mediarss.aspx?programId=627", True),
     "seg": lambda: rss(SEG, "omny"),
+    "kan": lambda: rss(KAN_KL, False),
 }
-FIRST_UPLOAD = {"seg"}  # בהפעלה הראשונה מעלים מיד את החדשה ביותר (ולא רק מהבאה)
+FIRST_UPLOAD = {"seg", "kan"}  # בהפעלה הראשונה מעלים מיד את החדשה ביותר (ולא רק מהבאה)
+ONCE_A_DAY = {"kan"}  # הפיד כבד (5MB) - אחרי שעלה הפרק של היום לא בודקים שוב עד מחר
+SEED_ONLY_DAYS = {"kan": (3,)}  # ביום ה' רק עד שההעלאה הראשונה הצליחה (אין שידור ביום ה')
 
 
 def load():
@@ -160,6 +167,11 @@ def cycle(st):
     for name, days, (h1, h2), folder, keep in SHOWS:
         if now.weekday() not in days or not (h1 <= now.hour < h2):
             continue
+        today = now.strftime("%Y-%m-%d")
+        if name in ONCE_A_DAY and st.setdefault("done", {}).get(name) == today:
+            continue
+        if now.weekday() in SEED_ONLY_DAYS.get(name, ()) and st["done"].get(name):
+            continue
         try:
             items = SRC[name]()
         except Exception as e:  # noqa: BLE001
@@ -179,6 +191,8 @@ def cycle(st):
             log("new", name, title[:50], "- downloading")
             try:
                 upload(url, folder, keep, title)
+                if name in ONCE_A_DAY:
+                    st.setdefault("done", {})[name] = today
             except Exception as e:  # noqa: BLE001
                 log("FAILED", name, title[:50], str(e)[:200])
                 st["seen"][name].remove(iid)  # ננסה שוב בסבב הבא
