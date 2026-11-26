@@ -1,0 +1,16 @@
+name: ytchan
+# אבחון: ערוץ של סרטון + העלאות אחרונות. client_payload.vid
+on:
+  repository_dispatch:
+    types: [ytchan]
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -q -U --pre "yt-dlp[default]" && python3 tools/ytchan.py
+        env:
+          VID: ${{ github.event.client_payload.vid }}
