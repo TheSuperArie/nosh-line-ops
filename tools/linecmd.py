@@ -45,6 +45,17 @@ for c in os.environ.get("INSPECT", "").split(";"):
         path, _, text = c[4:].partition("|")
         r = urllib.request.urlopen(urllib.request.Request(API + "UploadTextFile", data=urllib.parse.urlencode({"token": KEY, "what": path, "contents": text}).encode()), timeout=60)
         print("CAT put", path, r.read().decode()[:150])
+    elif c.startswith("addnum "):  # addnum path|0500000000 - מוסיף מספר לרשימה לבנה בלי להדפיס את הרשימה
+        path, _, num = c[7:].partition("|")
+        num = re.sub(r"\D", "", num)
+        cur = [x.strip() for x in (call("GetTextFile", what=path).get("contents") or "").splitlines() if x.strip()]
+        if num in cur:
+            print("CAT addnum", path, "already there ..." + num[-4:], "total", len(cur))
+        else:
+            cur.append(num)
+            r = urllib.request.urlopen(urllib.request.Request(API + "UploadTextFile", data=urllib.parse.urlencode({"token": KEY, "what": path, "contents": "\n".join(cur)}).encode()), timeout=60)
+            chk = [x.strip() for x in (call("GetTextFile", what=path).get("contents") or "").splitlines() if x.strip()]
+            print("CAT addnum", path, json.loads(r.read().decode()).get("responseStatus"), "added ..." + num[-4:], "present", num in chk, "total", len(chk))
     elif c.startswith("mkext "):
         path, _, typ = c[6:].partition("|")
         print("CAT mkext", path, json.dumps(call("UpdateExtension", path=path, type=typ or "playfile"), ensure_ascii=False)[:200])
