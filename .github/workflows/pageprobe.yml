@@ -1,0 +1,16 @@
+name: pageprobe
+# אבחון: קישורים + בקשות וידאו בדפים. client_payload.urls (;;) words (|)
+on:
+  repository_dispatch:
+    types: [pageprobe]
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -q playwright && python -m playwright install --with-deps chromium > /dev/null 2>&1
+      - run: python3 tools/pageprobe.py
+        env:
+          URLS: ${{ github.event.client_payload.urls }}
+          WORDS: ${{ github.event.client_payload.words }}
