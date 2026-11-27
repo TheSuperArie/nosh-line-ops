@@ -1,0 +1,21 @@
+name: ytls
+# אבחון: רשימת סרטונים מכתובות/חיפושים ביוטיוב (yt-dlp flat). client_payload.urls - מופרד ב-;;
+on:
+  repository_dispatch:
+    types: [ytls]
+jobs:
+  l:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - env:
+          URLS: ${{ github.event.client_payload.urls }}
+        run: |
+          pip install -q -U --pre "yt-dlp[default]"
+          IFS=$'\n'
+          for u in $(echo "$URLS" | sed 's/;;/\n/g'); do
+            echo "=== $u"
+            timeout 240 yt-dlp --flat-playlist --playlist-end 40 --print "LS %(id)s|%(duration_string)s|%(upload_date)s|%(playlist_title).40s|%(title).110s" "$u" 2>&1 | grep -E "^LS|ERROR" | head -45
+          done
