@@ -12,10 +12,11 @@ jobs:
         with: {python-version: "3.12"}
       - env:
           URLS: ${{ github.event.client_payload.urls }}
+          N: ${{ github.event.client_payload.n }}
         run: |
           pip install -q -U --pre "yt-dlp[default]"
           IFS=$'\n'
           for u in $(echo "$URLS" | sed 's/;;/\n/g'); do
             echo "=== $u"
-            timeout 240 yt-dlp --flat-playlist --playlist-end 40 --print "LS %(id)s|%(duration_string)s|%(upload_date)s|%(playlist_title).40s|%(title).110s" "$u" 2>&1 | grep -E "^LS|ERROR" | head -45
+            timeout 240 yt-dlp --flat-playlist --playlist-end ${N:-40} --print "LS %(id)s|%(duration_string)s|%(upload_date)s|%(live_status)s|%(title).100s|%(url)s" "$u" 2>&1 | grep -E "^LS|ERROR" | head -45
           done
