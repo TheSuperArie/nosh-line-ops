@@ -1,0 +1,35 @@
+name: c14live
+# הקלטת רצועת 19:00 של ערוץ 14 מהשידור החי ביוטיוב -> 2/2 (שרון גל / איילה חסון). מופעל מהשרת (shows_agent) ~18:40.
+# payload: start, end, folder, keep, label; test=1 + minutes = הקלטה קצרה לבדיקה (ל-AgentCode)
+on:
+  repository_dispatch:
+    types: [c14live]
+concurrency: c14live
+jobs:
+  r:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - uses: denoland/setup-deno@v2
+        with: {deno-version: v2.x}
+      - run: |
+          sudo apt-get -qq update > /dev/null || true
+          sudo apt-get -qq install -y --fix-missing ffmpeg > /dev/null
+          pip install -q -U "yt-dlp[default]" bgutil-ytdlp-pot-provider
+          docker run -d --name bgutil -p 4416:4416 --init brainicism/bgutil-ytdlp-pot-provider > /dev/null
+          for i in $(seq 1 30); do curl -s localhost:4416/ping > /dev/null && break; sleep 1; done
+          python3 tools/fix_cookies.py && cp cookies.txt /tmp/cookies.txt
+          python3 tools/c14live.py
+        env:
+          YM_TOKEN: ${{ secrets.YM_TOKEN }}
+          YT_COOKIES: ${{ secrets.YT_COOKIES }}
+          START: ${{ github.event.client_payload.start }}
+          END: ${{ github.event.client_payload.end }}
+          FOLDER: ${{ github.event.client_payload.folder }}
+          KEEP: ${{ github.event.client_payload.keep }}
+          LABEL: ${{ github.event.client_payload.label }}
+          TEST: ${{ github.event.client_payload.test }}
+          MINUTES: ${{ github.event.client_payload.minutes }}
