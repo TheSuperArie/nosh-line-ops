@@ -42,6 +42,9 @@ SCHEDULE = []  # 19/11: המהדורות, אולפן שישי ופגוש עבר�
 # שלנו יעלה ראשון. א'-ה' + מוצ"ש (לא שישי). השומר של ה-RSS נשאר כגיבוי.
 PAT_WARM = [((6, 0, 1, 2, 3, 5), "22:05", "210")]
 COLUMNS = [((4,), "07:00", "7"), ((4,), "09:00", "9"), ((4,), "10:00", "10")]
+# ערוץ 14, רצועת 19:00-20:00 (27/11): שרון גל במוצ"ש/א'/ב'/ג', איילה חסון ב-ד'/ה'. אין תוכנית מלאה ביוטיוב -> מקליטים
+# מהשידור החי (workflow c14live ב-nosh-line-ops), מופעל 20 דק' לפני כדי שהכול יהיה מותקן. כל יום חוץ משישי -> 2/2
+LIVE_REC = [((5, 6, 0, 1, 2, 3), "18:38", {"start": "19:00", "end": "20:00", "folder": "/2/2", "keep": "20", "label": "C14_19"})]
 
 
 def log(*a):
@@ -300,6 +303,17 @@ def cycle(st):
                 status(st, f"הפטריוטים: ריצת המתנה הופעלה ({code})")
             except Exception as e:  # noqa: BLE001
                 log("patwarm dispatch failed", str(e)[:200])
+    for days, hm, payload in LIVE_REC:
+        h, m = map(int, hm.split(":"))
+        t = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        k = f"{now.date()} live {payload['start']}"
+        if now.weekday() in days and t <= now < t + timedelta(minutes=20) and k not in st["fired"]:
+            try:
+                code = dispatch([], repo="TheSuperArie/nosh-line-ops", event="c14live", payload=payload)
+                st["fired"][k] = 1
+                status(st, f"ערוץ 14 {payload['start']}: הקלטה הופעלה ({code})")
+            except Exception as e:  # noqa: BLE001
+                log("live dispatch failed", str(e)[:200])
     st["fired"] = dict(list(st["fired"].items())[-50:])
     # 3. הפעלה ב-GitHub (מאחדים הכול לריצה אחת, ומחכים בין ריצות)
     if st["pending"] and time.time() - st.get("last", 0) > GAP:
